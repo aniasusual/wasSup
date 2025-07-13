@@ -37,7 +37,7 @@ export const ServiceSelector = ({
             >
               <input
                 type="checkbox"
-                checked={selectedServices.includes(service.id)}
+                checked={selectedServices.some((s: any) => s.id === service.id)}
                 onChange={() => onToggle(service.id)}
                 className="mr-3 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
               />

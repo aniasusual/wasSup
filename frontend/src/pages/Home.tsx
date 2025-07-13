@@ -6,14 +6,15 @@ import { TimeRangeSelector } from "../components/TimeRangeSelector";
 import { Chatbot } from "../components/Chatbot";
 import { AddServiceModal } from "../components/AddServiceModal";
 import LogViewer from "../components/LogViewer";
+import { ServiceTabs } from "../components/ServiceTabs";
 
 export const Home = () => {
   const [services, setServices] = useState<any[]>([]);
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [selectedServices, setSelectedServices] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [timeRange, setTimeRange] = useState("1h");
   const [searchQuery, setSearchQuery] = useState("");
-  const [logs, setLogs] = useState<any[]>([
+  const [logs, setLogs] = useState([
     {
       id: "1",
       timestamp: "2024-01-15T10:30:45.123Z",
@@ -94,24 +95,28 @@ export const Home = () => {
     setServices([...services, service]);
   };
 
-  const handleDeleteService = (serviceId: string) => {
+  const handleDeleteService = (serviceId: any) => {
     setServices(services.filter((s) => s.id !== serviceId));
-    setSelectedServices(selectedServices.filter((id) => id !== serviceId));
+    setSelectedServices((prev) =>
+      prev.some((s) => s.id === serviceId)
+        ? prev.filter((s) => s.id !== serviceId)
+        : [...prev, services.find((s) => s.id === serviceId)]
+    );
   };
 
   const toggleServiceSelection = (serviceId: string) => {
     setSelectedServices((prev) =>
-      prev.includes(serviceId)
-        ? prev.filter((id) => id !== serviceId)
-        : [...prev, serviceId]
+      prev.some((s) => s.id === serviceId)
+        ? prev.filter((s) => s.id !== serviceId)
+        : [...prev, services.find((s) => s.id === serviceId)]
     );
   };
 
   return (
-    <div className="bg-black w-full min-h-screen">
+    <div className="bg-black min-h-screen flex flex-col">
       {/* Header */}
-      <header className="bg-gray-900 border-b border-gray-800">
-        <div className="mx-auto px-4 py-4 w-full">
+      <header className="bg-gray-900 border-b border-gray-800 sticky top-0 z-10">
+        <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-white">wasSUP</h1>
             <button
@@ -127,11 +132,11 @@ export const Home = () => {
 
       {/* Services Section */}
       {services.length > 0 && (
-        <div className="mx-auto px-4 py-6 w-full">
+        <section className="container mx-auto px-4 py-6">
           <h2 className="text-lg font-semibold text-white mb-4">
             Configured Services
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {services.map((service) => (
               <ServiceCard
                 key={service.id}
@@ -140,16 +145,16 @@ export const Home = () => {
               />
             ))}
           </div>
-        </div>
+        </section>
       )}
 
       {/* Main Content */}
-      <div className="mx-auto px-4 py-6 w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <main className="container mx-auto px-4 py-6 flex-grow">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* Logs Section */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-3 space-y-6">
             {/* Filters */}
-            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
               <div className="space-y-4">
                 {/* Service Selector */}
                 <div>
@@ -188,20 +193,27 @@ export const Home = () => {
               </div>
             </div>
 
-            {/* Log Entries */}
-            <div className="space-y-2 h-[71.5vh] overflow-y-auto">
-              <LogViewer sampleLogs={logs} />
+            {/* Logs Viewer */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
+              <ServiceTabs
+                selectedServices={selectedServices}
+                logs={logs}
+                setLogs={setLogs}
+              />
+              <div className="mt-4 max-h-[60vh] overflow-y-auto">
+                <LogViewer sampleLogs={logs} />
+              </div>
             </div>
           </div>
 
           {/* Chatbot Section */}
-          <div className="lg:col-span-1 ">
-            <div className="bg-gray-900 border border-gray-800 rounded-lg h-[90vh] overflow-hidden">
+          <div className="lg:col-span-2">
+            <div className="bg-gray-900 border border-gray-800 rounded-lg h-[80vh] lg:sticky lg:top-4 overflow-hidden">
               <Chatbot selectedServices={selectedServices} />
             </div>
           </div>
         </div>
-      </div>
+      </main>
 
       {/* Add Service Modal */}
       <AddServiceModal
