@@ -4,7 +4,7 @@ from google.oauth2 import service_account
 
 def get_logs(filter_str: str = None, limit: int = 50):
     credentials = service_account.Credentials.from_service_account_file(
-        'app/secrets/test_key.json'
+        'app/secrets/hyperlocal_key.json'
     )
     client = logging_v2.Client(credentials=credentials)
 

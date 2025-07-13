@@ -6,6 +6,10 @@ import {
 } from "react-router-dom";
 import "./App.css";
 import Home from "./pages/Home";
+import { useAuth } from "./contexts/Auth";
+import { useEffect, useState } from "react";
+import { AuthSuccess } from "./components/AuthSuccess";
+import { Login } from "./components/Login";
 
 const NotFound = () => (
   <div className="min-h-screen bg-black flex items-center justify-center">
@@ -24,6 +28,30 @@ const NotFound = () => (
 );
 
 function App() {
+  const [path, setPath] = useState(window.location.pathname);
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    const handleLocationChange = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", handleLocationChange);
+    return () => window.removeEventListener("popstate", handleLocationChange);
+  }, []);
+
+  console.log("path", path);
+
+  // Check if we're on the auth success page and have a token
+  const urlParams = new URLSearchParams(window.location.search);
+  const hasToken = urlParams.get("token");
+
+  if (path === "/auth/success" && hasToken) {
+    console.log("auth success with token");
+    return <AuthSuccess />;
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
   return (
     <Router>
       <Routes>
