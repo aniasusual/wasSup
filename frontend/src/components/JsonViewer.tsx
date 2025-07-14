@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { ChevronDown, ChevronRight, Copy, Search, Filter } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 export const JsonViewer = ({ data, level = 0 }: any) => {
   const [expandedKeys, setExpandedKeys] = useState(new Set());
@@ -39,7 +39,7 @@ export const JsonViewer = ({ data, level = 0 }: any) => {
     <div className={level > 0 ? "ml-4" : ""}>
       <span className="text-gray-500">{isArray ? "[" : "{"}</span>
       <div className="ml-2">
-        {entries.map(([key, value], index) => {
+        {entries.map(([key, value]) => {
           const keyStr = `${level}-${key}`;
           const isObject = value && typeof value === "object";
           const isExpanded = expandedKeys.has(keyStr);

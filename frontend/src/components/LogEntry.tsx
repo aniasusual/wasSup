@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { ChevronDown, ChevronRight, Copy, Search, Filter } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { JsonViewer } from "./JsonViewer";
 
 export const LogEntry = ({ log }: any) => {
