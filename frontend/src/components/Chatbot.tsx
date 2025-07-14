@@ -1,50 +1,45 @@
-import React, { useState, useEffect } from "react";
-import {
-  Plus,
-  Search,
-  Filter,
-  Calendar,
-  Clock,
-  ChevronDown,
-  X,
-  Upload,
-  Check,
-  MessageSquare,
-  Send,
-  Settings,
-  Trash2,
-} from "lucide-react";
+import { useState } from "react";
+import { MessageSquare, Send } from "lucide-react";
+
+type Message = {
+  id: number;
+  text: string;
+  sender: "user" | "ai";
+  timestamp: string;
+};
 
 export const Chatbot = ({ selectedServices }: any) => {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState<string>("");
+  const [isTyping, setIsTyping] = useState<boolean>(false);
 
   const sendMessage = () => {
     if (!input.trim()) return;
 
-    const newMessage = {
+    const newMessage: Message = {
       id: Date.now(),
       text: input,
       sender: "user",
       timestamp: new Date().toLocaleTimeString(),
     };
 
-    setMessages([...messages, newMessage]);
+    setMessages((prev: Message[]) => [...prev, newMessage]);
     setInput("");
     setIsTyping(true);
 
     // Simulate AI response
     setTimeout(() => {
-      const aiResponse = {
+      const aiResponse: Message = {
         id: Date.now() + 1,
         text: `I've analyzed the logs from ${
-          selectedServices.length > 0 ? "the selected services" : "all services"
+          selectedServices?.length > 0
+            ? "the selected services"
+            : "all services"
         }. Based on your query "${input}", here's what I found...`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString(),
       };
-      setMessages((prev) => [...prev, aiResponse]);
+      setMessages((prev: Message[]) => [...prev, aiResponse]);
       setIsTyping(false);
     }, 1500);
   };
@@ -69,7 +64,7 @@ export const Chatbot = ({ selectedServices }: any) => {
           </div>
         )}
 
-        {messages.map((message) => (
+        {messages.map((message: Message) => (
           <div
             key={message.id}
             className={`flex ${
