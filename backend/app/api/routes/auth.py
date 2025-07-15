@@ -33,12 +33,14 @@ async def login():
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "response_type": "code",
-        "scope": "openid email profile https://www.googleapis.com/auth/logging.read https://www.googleapis.com/auth/cloud-platform.read-only",
+        "scope": (
+            "openid email profile "
+            "https://www.googleapis.com/auth/logging.read "
+            "https://www.googleapis.com/auth/cloud-platform"
+        ),
         "access_type": "offline",
         "prompt": "consent"
     }
-
-
     auth_url = f"{GOOGLE_AUTH_URL}?" + "&".join([f"{k}={v}" for k, v in params.items()])
     return {"auth_url": auth_url}
 

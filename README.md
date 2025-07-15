@@ -22,4 +22,6 @@ cd backend && source venv/bin/activate && uvicorn app.main:app --reload
 
 ./scripts/start_filtering_system.sh
 
+cd backend && source venv/bin/activate && uvicorn app.main:app --reload
+
 ```
