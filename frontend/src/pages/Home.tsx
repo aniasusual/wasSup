@@ -17,18 +17,14 @@ import type {
 import type { CloudProvider } from "../types/providers";
 
 export const Home = () => {
-  const [selectedService, setSelectedService] = useState<
-    GCPService | undefined
-  >();
-  const [selectedDeployment, setSelectedDeployment] = useState<
-    DeploymentInfo | undefined
-  >();
-  const [tabs, setTabs] = useState<LogTab[]>([]);
+  const [selectedService, setSelectedService] = useState<any>();
+  const [selectedDeployment, setSelectedDeployment] = useState<any>();
+  const [tabs, setTabs] = useState<any[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [filters, setFilters] = useState<FilterState>({
+  const [filters, setFilters] = useState<any>({
     severity: [],
     resourceType: "",
     logType: [],
@@ -41,6 +37,12 @@ export const Home = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("");
+
+  // Debug function to track project changes
+  const handleProjectChange = (projectId: string) => {
+    console.log("Home: Setting project to:", projectId);
+    setSelectedProject(projectId);
+  };
   const [selectedProvider, setSelectedProvider] = useState<
     CloudProvider | undefined
   >();
@@ -55,7 +57,7 @@ export const Home = () => {
     if (!token) return;
 
     try {
-      const response = await fetch("/api/logs/projects", {
+      const response = await fetch("/api/v1/logs/projects", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -77,29 +79,48 @@ export const Home = () => {
 
   // Create a new tab when service/deployment is selected
   useEffect(() => {
+    // Only create tabs in specific scenarios:
+    // 1. For non-deployment services: when service is selected
+    // 2. For deployment-based services: only when a specific deployment is selected
     if (selectedService) {
-      const tabId = selectedDeployment
-        ? `${selectedService.id}-${selectedDeployment.id}`
-        : selectedService.id;
+      let shouldCreateTab = false;
+      let tabId = "";
+      let tabTitle = "";
 
-      const existingTab = tabs.find((tab) => tab.id === tabId);
-
-      if (!existingTab) {
-        const newTab: LogTab = {
-          id: tabId,
-          title: selectedService.name,
-          serviceId: selectedService.id,
-          deploymentId: selectedDeployment?.id,
-          isActive: true,
-          filters: { ...filters },
-          query: "",
-          lastUpdated: new Date(),
-        };
-
-        setTabs((prev) => [...prev, newTab]);
-        setActiveTabId(tabId);
+      if (selectedService.isDeploymentBased) {
+        // For deployment-based services, only create tab when deployment is selected
+        if (selectedDeployment) {
+          shouldCreateTab = true;
+          tabId = `${selectedService.id}-${selectedDeployment.id}`;
+          tabTitle = `${selectedService.name} - ${selectedDeployment.name}`;
+        }
       } else {
-        setActiveTabId(tabId);
+        // For non-deployment services, create tab when service is selected
+        shouldCreateTab = true;
+        tabId = selectedService.id;
+        tabTitle = selectedService.name;
+      }
+
+      if (shouldCreateTab) {
+        const existingTab = tabs.find((tab) => tab.id === tabId);
+
+        if (!existingTab) {
+          const newTab: LogTab = {
+            id: tabId,
+            title: tabTitle,
+            serviceId: selectedService.id,
+            deploymentId: selectedDeployment?.id,
+            isActive: true,
+            filters: { ...filters },
+            query: "",
+            lastUpdated: new Date(),
+          };
+
+          setTabs((prev) => [...prev, newTab]);
+          setActiveTabId(tabId);
+        } else {
+          setActiveTabId(tabId);
+        }
       }
     }
   }, [selectedService, selectedDeployment]);
@@ -128,6 +149,7 @@ export const Home = () => {
         setActiveTabId(remainingTabs[0].id);
       } else {
         setActiveTabId("");
+        // Only clear selections if no tabs remain
         setSelectedService(undefined);
         setSelectedDeployment(undefined);
       }
@@ -136,6 +158,8 @@ export const Home = () => {
 
   const handleServiceSelect = (service: GCPService) => {
     setSelectedService(service);
+    // For deployment-based services, don't clear deployment selection
+    // as user might want to keep the current deployment selected
     if (!service.isDeploymentBased) {
       setSelectedDeployment(undefined);
     }
@@ -168,6 +192,14 @@ export const Home = () => {
   const handleSearch = async () => {
     if (!selectedProject || !selectedService) return;
 
+    // For deployment-based services, require a deployment to be selected
+    if (selectedService.isDeploymentBased && !selectedDeployment) {
+      console.log(
+        "Deployment-based service requires a deployment to be selected"
+      );
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Build filter string for GCP Logging API
@@ -196,7 +228,7 @@ export const Home = () => {
         filterStr += ` AND ${filters.customQuery}`;
       }
 
-      const response = await fetch("/api/logs/query", {
+      const response = await fetch("/api/v1logs/query", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -258,54 +290,64 @@ export const Home = () => {
     <div className="bg-gray-950 min-h-screen flex flex-col">
       {/* Header */}
       <header className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-800/50 sticky top-0 z-50">
-        <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                Wassup?
-              </h1>
-              <div className="hidden md:block h-6 w-px bg-gray-700"></div>
-              <div className="hidden md:block">
-                <span className="text-sm text-gray-400">
-                  Exploring the logs. Wanna join?
-                </span>
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3 md:py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+            {/* Logo and Title Section */}
+            <div className="flex items-center justify-between sm:justify-start">
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  Wassup?
+                </h1>
+                <div className="hidden sm:block h-6 w-px bg-gray-700"></div>
+                <div className="hidden sm:block">
+                  <span className="text-xs sm:text-sm text-gray-400">
+                    Exploring the logs. Wanna join?
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2">
-                <label className="text-sm font-medium text-gray-300">
+            {/* Controls Section */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+              {/* Provider Selector */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                <label className="text-xs sm:text-sm font-medium text-gray-300 whitespace-nowrap">
                   Cloud Provider
                 </label>
                 <ProviderSelector
                   selectedProvider={selectedProvider}
                   onProviderSelect={handleProviderSelect}
-                  className="w-94"
+                  className="w-full sm:w-64 md:w-80 lg:w-96"
                 />
               </div>
 
-              <button
-                onClick={handleRefresh}
-                disabled={isLoading}
-                className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-300 bg-gray-800/50 border border-gray-700 rounded-lg hover:bg-gray-700/50 hover:text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
-                />
-                Refresh
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={logs.length === 0}
-                className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export
-              </button>
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button
+                  onClick={handleRefresh}
+                  disabled={isLoading}
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-300 bg-gray-800/50 border border-gray-700 rounded-lg hover:bg-gray-700/50 hover:text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw
+                    className={`w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 ${
+                      isLoading ? "animate-spin" : ""
+                    }`}
+                  />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+                <button
+                  onClick={handleExport}
+                  disabled={logs.length === 0}
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
 
-              <button className="inline-flex items-center p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all duration-200">
-                <Settings className="w-4 h-4" />
-              </button>
+                <button className="inline-flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all duration-200">
+                  <Settings className="w-3 h-3 sm:w-4 sm:h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -315,7 +357,7 @@ export const Home = () => {
       <ProviderFilters
         selectedProvider={selectedProvider}
         selectedProject={selectedProject}
-        setSelectedProject={setSelectedProject}
+        setSelectedProject={handleProjectChange}
         projects={projects}
         selectedService={selectedService}
         onServiceSelect={handleServiceSelect}
@@ -324,7 +366,7 @@ export const Home = () => {
       />
 
       {/* Common filters - independent of provider */}
-      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4">
+      <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-3 sm:py-4">
         <CommonFilters
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
@@ -337,7 +379,9 @@ export const Home = () => {
           disabled={
             !selectedProvider ||
             (selectedProvider.id === "gcp" &&
-              (!selectedProject || !selectedService))
+              (!selectedProject ||
+                !selectedService ||
+                (selectedService.isDeploymentBased && !selectedDeployment)))
           }
         />
       </div>
@@ -345,7 +389,7 @@ export const Home = () => {
       {/* Tabs */}
       {tabs.length > 0 && (
         <div className="bg-gray-900/20 border-b border-gray-800/50">
-          <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16">
+          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
             <LogTabs
               tabs={tabs}
               activeTabId={activeTabId}
@@ -357,20 +401,20 @@ export const Home = () => {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-20 xl:grid-cols-20 2xl:grid-cols-20 gap-6 xl:gap-8 2xl:gap-12 h-full">
+      <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4 sm:py-6">
+        <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-4 sm:gap-6 xl:gap-8 2xl:gap-12 h-full">
           {/* Logs Section */}
-          <div className="lg:col-span-13 xl:col-span-13 2xl:col-span-13 space-y-4 xl:space-y-6">
+          <div className="xl:col-span-13 2xl:col-span-13 space-y-3 sm:space-y-4 xl:space-y-6">
             {/* Logs Viewer Card */}
             <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden">
-              <div className="px-6 py-4 xl:px-8 xl:py-6 border-b border-gray-800/50 bg-gray-900/30">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3 xl:space-x-4">
-                    <h3 className="text-lg xl:text-xl font-semibold text-white">
+              <div className="px-4 sm:px-6 xl:px-8 py-3 sm:py-4 xl:py-6 border-b border-gray-800/50 bg-gray-900/30">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+                  <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4">
+                    <h3 className="text-base sm:text-lg xl:text-xl font-semibold text-white">
                       Log Entries
                     </h3>
                     {logs.length > 0 && (
-                      <span className="inline-flex items-center px-2.5 py-0.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
+                      <span className="inline-flex items-center px-2 py-0.5 sm:px-2.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
                         {logs.length} entries
                       </span>
                     )}
@@ -378,8 +422,8 @@ export const Home = () => {
 
                   {isLoading && (
                     <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span className="text-sm xl:text-base">
+                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                      <span className="text-xs sm:text-sm xl:text-base">
                         Loading logs...
                       </span>
                     </div>
@@ -389,21 +433,24 @@ export const Home = () => {
 
               <div className="relative">
                 {logs.length === 0 && !isLoading ? (
-                  <div className="flex flex-col items-center justify-center py-12 xl:py-16 px-6 xl:px-8">
-                    <div className="w-16 h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-4 xl:mb-6">
-                      <Search className="w-8 h-8 xl:w-10 xl:h-10 text-gray-400" />
+                  <div className="flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
+                      <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
                     </div>
-                    <h3 className="text-lg xl:text-xl font-medium text-gray-300 mb-2 xl:mb-3">
+                    <h3 className="text-base sm:text-lg xl:text-xl font-medium text-gray-300 mb-2 xl:mb-3 text-center">
                       No logs found
                     </h3>
-                    <p className="text-gray-500 text-center max-w-md xl:max-w-lg xl:text-lg">
+                    <p className="text-gray-500 text-center max-w-sm sm:max-w-md xl:max-w-lg text-xs sm:text-sm xl:text-lg">
                       {!selectedProject || !selectedService
                         ? "Select a project and service to start exploring logs"
+                        : selectedService?.isDeploymentBased &&
+                          !selectedDeployment
+                        ? "Select a deployment to view logs"
                         : "Try adjusting your search query or filters to find relevant logs"}
                     </p>
                   </div>
                 ) : (
-                  <div className="max-h-[calc(100vh-400px)] xl:max-h-[calc(100vh-350px)] overflow-y-auto">
+                  <div className="max-h-[calc(100vh-300px)] sm:max-h-[calc(100vh-350px)] xl:max-h-[calc(100vh-400px)] overflow-y-auto">
                     <EnhancedLogViewer logs={logs} />
                   </div>
                 )}
@@ -412,10 +459,10 @@ export const Home = () => {
           </div>
 
           {/* Chatbot Section */}
-          <div className="lg:col-span-7 xl:col-span-7 2xl:col-span-7">
-            <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden h-[calc(100vh-300px)] xl:h-[calc(100vh-280px)] sticky top-24">
-              <div className="px-4 xl:px-6 py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
-                <h3 className="text-sm xl:text-base font-semibold text-white">
+          <div className="xl:col-span-7 2xl:col-span-7">
+            <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden h-[300px] sm:h-[400px] xl:h-[calc(100vh-300px)] 2xl:h-[calc(100vh-280px)] xl:sticky xl:top-24">
+              <div className="px-3 sm:px-4 xl:px-6 py-2 sm:py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
+                <h3 className="text-xs sm:text-sm xl:text-base font-semibold text-white">
                   AI Assistant
                 </h3>
               </div>

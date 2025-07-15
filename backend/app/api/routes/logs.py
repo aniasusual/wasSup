@@ -11,6 +11,7 @@ from ...models.models import LogEntry, LogQuery
 from ..helpers.authHelper import get_current_user,get_user_tokens, is_token_expired
 from ..routes.auth import refresh_token
 from fastapi import Body
+from ...services.deployment_service import GCPDeploymentService
 
 router = APIRouter(tags=["logs"])
 
@@ -475,3 +476,42 @@ async def analyze_logs(query: Any = Body(...), current_user: str = Depends(get_c
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing logs: {str(e)}")
+
+@router.get("/logs/deployments/{project_id}/{service_id}")
+async def get_deployments(project_id: str, service_id: str, current_user: str = Depends(get_current_user)):
+    """Get deployments/instances for a specific GCP service"""
+    user_token_data = get_user_tokens(current_user)
+    if not user_token_data:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+    
+    # Check if token is expired
+    if is_token_expired(current_user):
+        # Try to refresh
+        await refresh_token(current_user)
+        user_token_data = get_user_tokens(current_user)
+    
+    try:
+        # Create credentials from token
+        credentials = Credentials(
+            token=user_token_data["access_token"],
+            refresh_token=user_token_data.get("refresh_token"),
+            token_uri=GOOGLE_TOKEN_URL,
+            client_id=GOOGLE_CLIENT_ID,
+            client_secret=GOOGLE_CLIENT_SECRET
+        )
+
+        # Create deployment service
+        deployment_service = GCPDeploymentService(credentials)
+        
+        # Get deployments for the specified service
+        deployments = await deployment_service.get_deployments(project_id, service_id)
+        
+        return {
+            "deployments": deployments,
+            "service_id": service_id,
+            "project_id": project_id,
+            "count": len(deployments)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching deployments: {str(e)}")

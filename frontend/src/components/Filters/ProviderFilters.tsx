@@ -47,12 +47,12 @@ const ProviderFilters: React.FC<ProviderFiltersProps> = ({
     case "aws":
       return (
         <div className="bg-gray-900/30 border-b border-gray-800/50">
-          <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4">
-            <div className="text-center py-8">
-              <div className="text-gray-400 text-lg font-medium mb-2">
+          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-6 sm:py-8">
+            <div className="text-center">
+              <div className="text-gray-400 text-base sm:text-lg font-medium mb-2">
                 AWS Support Coming Soon
               </div>
-              <p className="text-gray-500 text-sm">
+              <p className="text-gray-500 text-xs sm:text-sm">
                 AWS CloudWatch integration will be available in a future update.
               </p>
             </div>
@@ -63,12 +63,12 @@ const ProviderFilters: React.FC<ProviderFiltersProps> = ({
     case "azure":
       return (
         <div className="bg-gray-900/30 border-b border-gray-800/50">
-          <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4">
-            <div className="text-center py-8">
-              <div className="text-gray-400 text-lg font-medium mb-2">
+          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-6 sm:py-8">
+            <div className="text-center">
+              <div className="text-gray-400 text-base sm:text-lg font-medium mb-2">
                 Azure Support Coming Soon
               </div>
-              <p className="text-gray-500 text-sm">
+              <p className="text-gray-500 text-xs sm:text-sm">
                 Azure Monitor integration will be available in a future update.
               </p>
             </div>
@@ -79,12 +79,12 @@ const ProviderFilters: React.FC<ProviderFiltersProps> = ({
     case "digitalocean":
       return (
         <div className="bg-gray-900/30 border-b border-gray-800/50">
-          <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4">
-            <div className="text-center py-8">
-              <div className="text-gray-400 text-lg font-medium mb-2">
+          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-6 sm:py-8">
+            <div className="text-center">
+              <div className="text-gray-400 text-base sm:text-lg font-medium mb-2">
                 DigitalOcean Support Coming Soon
               </div>
-              <p className="text-gray-500 text-sm">
+              <p className="text-gray-500 text-xs sm:text-sm">
                 DigitalOcean monitoring integration will be available in a
                 future update.
               </p>
@@ -96,12 +96,12 @@ const ProviderFilters: React.FC<ProviderFiltersProps> = ({
     case "heroku":
       return (
         <div className="bg-gray-900/30 border-b border-gray-800/50">
-          <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4">
-            <div className="text-center py-8">
-              <div className="text-gray-400 text-lg font-medium mb-2">
+          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-6 sm:py-8">
+            <div className="text-center">
+              <div className="text-gray-400 text-base sm:text-lg font-medium mb-2">
                 Heroku Support Coming Soon
               </div>
-              <p className="text-gray-500 text-sm">
+              <p className="text-gray-500 text-xs sm:text-sm">
                 Heroku logs integration will be available in a future update.
               </p>
             </div>

@@ -27,12 +27,12 @@ const CommonFilters: React.FC<CommonFiltersProps> = ({
   disabled = false,
 }) => {
   return (
-    <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl p-6 xl:p-8 shadow-lg">
-      <div className="space-y-4 xl:space-y-6">
+    <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl p-4 sm:p-6 xl:p-8 shadow-lg">
+      <div className="space-y-3 sm:space-y-4 xl:space-y-6">
         {/* Search Bar */}
-        <div className="flex flex-col sm:flex-row gap-3 xl:gap-4">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 xl:gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
@@ -40,7 +40,7 @@ const CommonFilters: React.FC<CommonFiltersProps> = ({
               onKeyPress={(e) => e.key === "Enter" && handleSearch()}
               placeholder="Search logs, messages, or trace IDs..."
               disabled={disabled}
-              className="w-full pl-10 pr-4 py-3 xl:py-4 bg-gray-800/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full pl-10 pr-4 py-2.5 sm:py-3 xl:py-4 bg-gray-800/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
             />
           </div>
 
@@ -48,16 +48,16 @@ const CommonFilters: React.FC<CommonFiltersProps> = ({
             <button
               onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
               disabled={disabled}
-              className={`inline-flex items-center px-4 py-3 xl:px-6 xl:py-4 text-sm font-medium border rounded-lg transition-all duration-200 ${
+              className={`inline-flex items-center px-3 sm:px-4 xl:px-6 py-2.5 sm:py-3 xl:py-4 text-xs sm:text-sm font-medium border rounded-lg transition-all duration-200 ${
                 showAdvancedFilters
                   ? "text-blue-400 bg-blue-900/20 border-blue-700"
                   : "text-gray-300 bg-gray-800/50 border-gray-700 hover:bg-gray-700/50"
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              <Filter className="w-4 h-4 mr-2" />
-              Filters
+              <Filter className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+              <span className="hidden sm:inline">Filters</span>
               <ChevronDown
-                className={`w-4 h-4 ml-2 transition-transform ${
+                className={`w-3 h-3 sm:w-4 sm:h-4 ml-1.5 sm:ml-2 transition-transform ${
                   showAdvancedFilters ? "rotate-180" : ""
                 }`}
               />
@@ -66,17 +66,17 @@ const CommonFilters: React.FC<CommonFiltersProps> = ({
             <button
               onClick={handleSearch}
               disabled={isLoading || disabled}
-              className="inline-flex items-center px-6 py-3 xl:px-8 xl:py-4 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center px-4 sm:px-6 xl:px-8 py-2.5 sm:py-3 xl:py-4 text-xs sm:text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Searching...
+                  <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 animate-spin" />
+                  <span className="hidden sm:inline">Searching...</span>
                 </>
               ) : (
                 <>
-                  <Search className="w-4 h-4 mr-2" />
-                  Search
+                  <Search className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                  <span className="hidden sm:inline">Search</span>
                 </>
               )}
             </button>
@@ -85,7 +85,7 @@ const CommonFilters: React.FC<CommonFiltersProps> = ({
 
         {/* Advanced Filters */}
         {showAdvancedFilters && (
-          <div className="border-t border-gray-800 pt-4 xl:pt-6">
+          <div className="border-t border-gray-800 pt-3 sm:pt-4 xl:pt-6">
             <AdvancedFilters
               filters={filters}
               onFiltersChange={onFiltersChange}

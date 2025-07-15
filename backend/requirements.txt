@@ -1,3 +1,12 @@
 google-auth
 google-cloud-logging
 google-cloud-resource-manager
+google-cloud-run
+google-cloud-functions
+google-cloud-container
+google-cloud-batch
+google-cloud-compute
+google-cloud-dataproc
+google-cloud-scheduler
+fastapi
+httpx
