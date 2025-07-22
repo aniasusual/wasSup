@@ -60,6 +60,12 @@ const formatTimestamp = (timestamp: Date) => {
 const LogEntryComponent = ({ log }: { log: LogEntry }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // Always allow expand/collapse, not just for structured data
+  const logMessage = log.message || log.textPayload || "No message";
+  const previewMessage =
+    logMessage.length > 200
+      ? logMessage.slice(0, 200) + "..."
+      : logMessage.split("\n")[0];
   const hasStructuredData =
     log.jsonPayload || log.httpRequest || log.traceId || log.spanId;
 
@@ -98,24 +104,24 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-white font-medium">
-                {log.message || log.textPayload || "No message"}
+              <div className="mt-1 text-white font-medium break-words whitespace-pre-line">
+                {isExpanded ? logMessage : previewMessage}
               </div>
             </div>
           </div>
 
-          {hasStructuredData && (
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="flex-shrink-0 p-1 text-gray-400 hover:text-white transition-colors"
-            >
-              {isExpanded ? (
-                <ChevronDown className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-            </button>
-          )}
+          {/* Always show expand/collapse button */}
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex-shrink-0 p-1 text-gray-400 hover:text-white transition-colors"
+            title={isExpanded ? "Collapse log" : "Expand log"}
+          >
+            {isExpanded ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </button>
         </div>
 
         {/* Resource Info */}
@@ -187,6 +193,17 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+        {/* Show full log object as JSON when expanded */}
+        {isExpanded && (
+          <div className="mt-4 p-3 bg-gray-900 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-300 mb-2">
+              Full Log Object
+            </h4>
+            <pre className="text-xs text-gray-200 bg-gray-950 p-2 rounded overflow-x-auto">
+              {JSON.stringify(log, null, 2)}
+            </pre>
           </div>
         )}
       </div>

@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, Loader2, Server } from "lucide-react";
-import type { GCPService } from "../types/gcp";
-import type { DeploymentInfo } from "../services/deploymentService";
+// import type { GCPService } from "../types/gcp";
+// import type { DeploymentInfo } from "../services/deploymentService";
 import { useDeploymentService } from "../services/deploymentService";
 
-interface DeploymentSelectorProps {
-  service: GCPService;
-  selectedDeployment?: DeploymentInfo;
-  onDeploymentSelect: (deployment: DeploymentInfo) => void;
-  className?: string;
-  projectId?: string;
-}
+// interface DeploymentSelectorProps {
+//   service: GCPService;
+//   selectedDeployment?: DeploymentInfo;
+//   onDeploymentSelect: (deployment: DeploymentInfo) => void;
+//   className?: string;
+//   projectId?: string;
+// }
 
 export const DeploymentSelector = ({
   service,
@@ -18,9 +18,9 @@ export const DeploymentSelector = ({
   onDeploymentSelect,
   className = "",
   projectId,
-}: DeploymentSelectorProps) => {
+}: any) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [deployments, setDeployments] = useState<DeploymentInfo[]>([]);
+  const [deployments, setDeployments] = useState<any>([]);
   const [loading, setLoading] = useState(false);
   const { fetchDeployments } = useDeploymentService();
 
@@ -45,7 +45,7 @@ export const DeploymentSelector = ({
     }
   };
 
-  const handleDeploymentSelect = (deployment: DeploymentInfo) => {
+  const handleDeploymentSelect = (deployment: any) => {
     onDeploymentSelect(deployment);
     setIsOpen(false);
   };
@@ -73,7 +73,7 @@ export const DeploymentSelector = ({
               <Server className="w-5 h-5 text-blue-500" />
               <div className="text-left">
                 <div className="font-medium">
-                  {selectedDeployment.display_name}
+                  {selectedDeployment.display_name || selectedDeployment.name}
                 </div>
                 <div className="text-sm text-gray-400">
                   {selectedDeployment.type} • {selectedDeployment.status}
@@ -81,6 +81,7 @@ export const DeploymentSelector = ({
                     ` • ${selectedDeployment.region}`}
                   {selectedDeployment.location &&
                     ` • ${selectedDeployment.location}`}
+                  {selectedDeployment.zone && ` • ${selectedDeployment.zone}`}
                 </div>
               </div>
             </>
@@ -102,32 +103,40 @@ export const DeploymentSelector = ({
         <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
           <div className="p-2">
             {deployments.length > 0 ? (
-              deployments.map((deployment) => (
-                <button
-                  key={deployment.id}
-                  onClick={() => handleDeploymentSelect(deployment)}
-                  className="w-full flex items-center gap-3 p-3 text-left text-white hover:bg-gray-800 rounded-lg transition-colors"
-                >
-                  <Server className="w-5 h-5 text-blue-500" />
-                  <div className="flex-1">
-                    <div className="font-medium">{deployment.display_name}</div>
-                    <div className="text-sm text-gray-400">
-                      {deployment.type} • {deployment.status}
-                      {deployment.region && ` • ${deployment.region}`}
-                      {deployment.location && ` • ${deployment.location}`}
+              deployments.map((deployment: any) => {
+                const isReady =
+                  deployment.status === "Ready" ||
+                  deployment.status === "RUNNING" ||
+                  deployment.status === "ACTIVE";
+
+                return (
+                  <button
+                    key={deployment.id || deployment.name}
+                    onClick={() => handleDeploymentSelect(deployment)}
+                    className="w-full flex items-center gap-3 p-3 text-left text-white hover:bg-gray-800 rounded-lg transition-colors"
+                  >
+                    <Server className="w-5 h-5 text-blue-500" />
+                    <div className="flex-1">
+                      <div className="font-medium">
+                        {deployment.display_name ||
+                          deployment.name ||
+                          "Unknown Service"}
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        {deployment.type} • {isReady ? "Ready" : "Not Ready"}
+                        {deployment.region && ` • ${deployment.region}`}
+                        {deployment.location && ` • ${deployment.location}`}
+                        {deployment.zone && ` • ${deployment.zone}`}
+                      </div>
                     </div>
-                  </div>
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      deployment.status === "RUNNING" ||
-                      deployment.status === "ACTIVE" ||
-                      deployment.status === "READY"
-                        ? "bg-green-500"
-                        : "bg-yellow-500"
-                    }`}
-                  />
-                </button>
-              ))
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        isReady ? "bg-green-500" : "bg-yellow-500"
+                      }`}
+                    />
+                  </button>
+                );
+              })
             ) : (
               <div className="p-3 text-gray-400 text-center">
                 No deployments found

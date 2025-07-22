@@ -1,7 +1,7 @@
 import React from "react";
 import { GCPServiceSelector } from "../GCPServiceSelector";
 import { GCPProjectSelector } from "../GCPProjectSelector";
-import { DeploymentSelector } from "../DeploymentSelector";
+// import { DeploymentSelector } from "../DeploymentSelector";
 // import type { GCPService, DeploymentInfo } from "../../types/gcp";
 
 // interface GcpFiltersProps {
@@ -20,8 +20,8 @@ const GcpFilters: React.FC<any> = ({
   projects,
   selectedService,
   onServiceSelect,
-  selectedDeployment,
-  onDeploymentSelect,
+  // selectedDeployment,
+  // onDeploymentSelect,
 }) => {
   return (
     <div>
@@ -49,20 +49,6 @@ const GcpFilters: React.FC<any> = ({
                 onServiceSelect={onServiceSelect}
               />
             </div>
-
-            {selectedService?.isDeploymentBased && (
-              <div className="space-y-2">
-                <label className="block text-xs sm:text-sm font-medium text-gray-300">
-                  Deployment
-                </label>
-                <DeploymentSelector
-                  service={selectedService}
-                  selectedDeployment={selectedDeployment}
-                  onDeploymentSelect={onDeploymentSelect}
-                  projectId={selectedProject}
-                />
-              </div>
-            )}
           </div>
         </div>
       </div>

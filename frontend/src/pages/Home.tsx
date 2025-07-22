@@ -1,61 +1,56 @@
 import { useState, useEffect } from "react";
-import { Search, RefreshCw, Download, Settings } from "lucide-react";
+import { Search, RefreshCw, Download, Settings, X } from "lucide-react";
 import { ProviderSelector } from "../components/ProviderSelector";
 import { LogTabs } from "../components/LogTabs";
 import { EnhancedLogViewer } from "../components/EnhancedLogViewer";
 import { Chatbot } from "../components/Chatbot";
 import ProviderFilters from "../components/Filters/ProviderFilters";
-import CommonFilters from "../components/Filters/CommonFilters";
 import { useAuth } from "../contexts/Auth";
-import type {
-  GCPService,
-  LogTab,
-  LogEntry,
-  DeploymentInfo,
-  FilterState,
-} from "../types/gcp";
-import type { CloudProvider } from "../types/providers";
+import { useLogService } from "../services/logService";
+import type { GCPService, LogTab } from "../types/gcp";
+import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
+import { getServiceById } from "../data/gcpResourceMappings";
+import DateTimeSearchBar from "../components/DateTimeSearchBar";
 
 export const Home = () => {
-  const [selectedService, setSelectedService] = useState<any>();
-  const [selectedDeployment, setSelectedDeployment] = useState<any>();
+  const [selectedService, setSelectedService] = useState<
+    GCPService | undefined
+  >();
   const [tabs, setTabs] = useState<any[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
-  const [logs, setLogs] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [filters, setFilters] = useState<any>({
-    severity: [],
-    resourceType: "",
-    logType: [],
-    sourceLocation: "",
-    userAccount: "",
-    requestId: "",
-    timeRange: "1h",
-    customQuery: "",
-  });
+  // Change logs to be per-tab
+  const [tabLogs, setTabLogs] = useState<Record<string, any[]>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedProvider, setSelectedProvider] = useState<any>();
+  const [openQueryBuilderTabId, setOpenQueryBuilderTabId] = useState<
+    string | null
+  >(null);
+  const { token, logout } = useAuth();
+  const { fetchLogs } = useLogService();
 
-  // Debug function to track project changes
-  const handleProjectChange = (projectId: string) => {
-    console.log("Home: Setting project to:", projectId);
-    setSelectedProject(projectId);
+  // New: Simple search and date/time state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [startDate, setStartDate] = useState(""); // ISO string
+  const [endDate, setEndDate] = useState(""); // ISO string
+  const [pendingSearch, setPendingSearch] = useState({
+    searchQuery: "",
+    startDate: "",
+    endDate: "",
+  });
+
+  // Only fetch logs when user clicks Search or presses Enter
+  const handleSearch = () => {
+    setPendingSearch({ searchQuery, startDate, endDate });
   };
-  const [selectedProvider, setSelectedProvider] = useState<
-    CloudProvider | undefined
-  >();
-  const { token } = useAuth();
 
-  // Fetch projects on component mount
   useEffect(() => {
     fetchProjects();
   }, [token]);
 
   const fetchProjects = async () => {
     if (!token) return;
-
     try {
       const response = await fetch("/api/v1/logs/projects", {
         method: "GET",
@@ -64,7 +59,6 @@ export const Home = () => {
           Authorization: `Bearer ${token}`,
         },
       });
-
       if (response.ok) {
         const data = await response.json();
         setProjects(data.projects || []);
@@ -77,53 +71,33 @@ export const Home = () => {
     }
   };
 
-  // Create a new tab when service/deployment is selected
-  useEffect(() => {
-    // Only create tabs in specific scenarios:
-    // 1. For non-deployment services: when service is selected
-    // 2. For deployment-based services: only when a specific deployment is selected
-    if (selectedService) {
-      let shouldCreateTab = false;
-      let tabId = "";
-      let tabTitle = "";
-
-      if (selectedService.isDeploymentBased) {
-        // For deployment-based services, only create tab when deployment is selected
-        if (selectedDeployment) {
-          shouldCreateTab = true;
-          tabId = `${selectedService.id}-${selectedDeployment.id}`;
-          tabTitle = `${selectedService.name} - ${selectedDeployment.name}`;
-        }
-      } else {
-        // For non-deployment services, create tab when service is selected
-        shouldCreateTab = true;
-        tabId = selectedService.id;
-        tabTitle = selectedService.name;
-      }
-
-      if (shouldCreateTab) {
-        const existingTab = tabs.find((tab) => tab.id === tabId);
-
-        if (!existingTab) {
-          const newTab: LogTab = {
-            id: tabId,
-            title: tabTitle,
-            serviceId: selectedService.id,
-            deploymentId: selectedDeployment?.id,
-            isActive: true,
-            filters: { ...filters },
-            query: "",
-            lastUpdated: new Date(),
-          };
-
-          setTabs((prev) => [...prev, newTab]);
-          setActiveTabId(tabId);
-        } else {
-          setActiveTabId(tabId);
-        }
-      }
-    }
-  }, [selectedService, selectedDeployment]);
+  // Create a new tab when service is selected (allow multiple tabs for same service)
+  const handleServiceSelect = (service: GCPService) => {
+    const tabId = `${service.id}-${Date.now()}`;
+    // Use the user-friendly service name for the tab title
+    const tabTitle = service.name;
+    const newTab: LogTab = {
+      id: tabId,
+      title: tabTitle,
+      serviceId: service.id,
+      isActive: true,
+      filters: {
+        severity: [],
+        resourceType: service.id, // Ensure resourceType is set to the service id
+        logType: [],
+        sourceLocation: "",
+        userAccount: "",
+        requestId: "",
+        timeRange: "1h",
+        customQuery: "",
+      },
+      query: "",
+      lastUpdated: new Date(),
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(tabId);
+    setSelectedService(service);
+  };
 
   // Update active tab when changed
   useEffect(() => {
@@ -141,150 +115,110 @@ export const Home = () => {
 
   const handleTabClose = (tabId: string) => {
     setTabs((prev) => prev.filter((tab) => tab.id !== tabId));
-
-    // If closing active tab, switch to another tab
     if (tabId === activeTabId) {
       const remainingTabs = tabs.filter((tab) => tab.id !== tabId);
       if (remainingTabs.length > 0) {
         setActiveTabId(remainingTabs[0].id);
       } else {
         setActiveTabId("");
-        // Only clear selections if no tabs remain
         setSelectedService(undefined);
-        setSelectedDeployment(undefined);
       }
     }
-  };
-
-  const handleServiceSelect = (service: GCPService) => {
-    setSelectedService(service);
-    // For deployment-based services, don't clear deployment selection
-    // as user might want to keep the current deployment selected
-    if (!service.isDeploymentBased) {
-      setSelectedDeployment(undefined);
+    // Close query builder if it's open for this tab
+    if (openQueryBuilderTabId === tabId) {
+      setOpenQueryBuilderTabId(null);
     }
   };
 
-  const handleDeploymentSelect = (deployment: DeploymentInfo) => {
-    setSelectedDeployment(deployment);
-  };
-
-  const handleProviderSelect = (provider: CloudProvider) => {
-    setSelectedProvider(provider);
-    // Reset service-specific selections when provider changes
-    setSelectedService(undefined);
-    setSelectedDeployment(undefined);
-    // Keep tabs, search, and filters independent of provider
-  };
-
-  const handleFiltersChange = (newFilters: FilterState) => {
-    setFilters(newFilters);
-    // Update active tab's filters
-    if (activeTabId) {
-      setTabs((prev) =>
-        prev.map((tab) =>
-          tab.id === activeTabId ? { ...tab, filters: newFilters } : tab
-        )
-      );
+  // Handler for opening query builder for a tab
+  const handleOpenQueryBuilder = (tabId: string) => {
+    // Verify the tab exists before opening query builder
+    const tab = tabs.find((tab) => tab.id === tabId);
+    if (tab) {
+      setOpenQueryBuilderTabId(tabId);
+    } else {
+      console.error(`Tab with id ${tabId} not found`);
     }
   };
 
-  const handleSearch = async () => {
-    if (!selectedProject || !selectedService) return;
+  // Handler for closing query builder
+  const handleCloseQueryBuilder = () => {
+    setOpenQueryBuilderTabId(null);
+  };
 
-    // For deployment-based services, require a deployment to be selected
-    if (selectedService.isDeploymentBased && !selectedDeployment) {
-      console.log(
-        "Deployment-based service requires a deployment to be selected"
-      );
-      return;
+  // Handler for updating a tab (e.g., when query builder changes resource type)
+  const handleUpdateTab = (updatedTab: LogTab) => {
+    setTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id === updatedTab.id) {
+          // Update the tab title if resourceType changed
+          const svc = getServiceById(updatedTab.filters.resourceType);
+          return {
+            ...updatedTab,
+            title: svc ? svc.id : updatedTab.title,
+          };
+        }
+        return tab;
+      })
+    );
+  };
+
+  // Handler for query submission from QueryBuilder
+  const handleQuerySubmit = (query: string) => {
+    if (!openQueryBuilderTabId) return;
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === openQueryBuilderTabId
+          ? { ...tab, query, lastUpdated: new Date() }
+          : tab
+      )
+    );
+    setOpenQueryBuilderTabId(null);
+    // Fetch logs for this tab after updating query
+    const tab = tabs.find((t) => t.id === openQueryBuilderTabId);
+    if (tab) {
+      fetchLogsForTab({ ...tab, query });
     }
+  };
 
+  // Get the current tab for query builder
+  const getCurrentTab = () => {
+    if (!openQueryBuilderTabId) return null;
+    const tab = tabs.find((t) => t.id === openQueryBuilderTabId);
+    return tab || null;
+  };
+
+  const currentTab = getCurrentTab();
+
+  // Fetch logs for a specific tab
+  const fetchLogsForTab = async (tab: LogTab) => {
+    if (!selectedProject || !tab) return;
     setIsLoading(true);
     try {
-      // Build filter string for GCP Logging API
-      let filterStr = `resource.type="${selectedService.id}"`;
-
-      if (selectedDeployment) {
-        filterStr += ` AND resource.labels.deployment_id="${selectedDeployment.id}"`;
-      }
-
-      if (filters.severity.length > 0) {
-        const severityFilter = filters.severity
-          .map((s) => `severity="${s}"`)
-          .join(" OR ");
-        filterStr += ` AND (${severityFilter})`;
-      }
-
-      if (filters.resourceType) {
-        filterStr += ` AND resource.type="${filters.resourceType}"`;
-      }
-
-      if (searchQuery) {
-        filterStr += ` AND textPayload:"${searchQuery}"`;
-      }
-
-      if (filters.customQuery) {
-        filterStr += ` AND ${filters.customQuery}`;
-      }
-
-      const response = await fetch("/api/v1logs/query", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+      const res = await fetchLogs({
+        projectId: selectedProject,
+        serviceId: tab.filters.resourceType,
+        searchQuery: tab.query,
+        filters: {
+          ...tab.filters,
         },
-        body: JSON.stringify({
-          project_id: selectedProject,
-          filter: filterStr,
-          page_size: 100,
-          order_by: "timestamp desc",
-        }),
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Convert the API response to our LogEntry format
-        const convertedLogs = data.logs.map((log: any) => ({
-          id: log.insertId || Math.random().toString(),
-          timestamp: new Date(log.timestamp),
-          severity: log.severity,
-          message: log.message,
-          resource: {
-            type: log.resource_type,
-            labels: log.resource_labels || {},
-          },
-          labels: log.labels || {},
-          jsonPayload: log.jsonPayload,
-          textPayload: log.textPayload,
-          httpRequest: log.httpRequest,
-          traceId: log.traceId,
-          spanId: log.spanId,
-        }));
-
-        setLogs(convertedLogs);
-      }
-    } catch (error) {
-      console.error("Error fetching logs:", error);
+      setTabLogs((prev) => ({ ...prev, [tab.id]: res.logs }));
+    } catch (e) {
+      setTabLogs((prev) => ({ ...prev, [tab.id]: [] }));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleRefresh = () => {
-    handleSearch();
-  };
-
-  const handleExport = () => {
-    const dataStr = JSON.stringify(logs, null, 2);
-    const dataBlob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `gcp-logs-${new Date().toISOString()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
+  // Fetch logs when active tab or its filters/query changes
+  useEffect(() => {
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (activeTab && selectedProject) {
+      fetchLogsForTab(activeTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, selectedProject, tabs]);
 
   return (
     <div className="bg-gray-950 min-h-screen flex flex-col">
@@ -316,7 +250,7 @@ export const Home = () => {
                 </label>
                 <ProviderSelector
                   selectedProvider={selectedProvider}
-                  onProviderSelect={handleProviderSelect}
+                  onProviderSelect={setSelectedProvider}
                   className="w-full sm:w-64 md:w-80 lg:w-96"
                 />
               </div>
@@ -324,7 +258,7 @@ export const Home = () => {
               {/* Action Buttons */}
               <div className="flex items-center gap-2 sm:gap-3">
                 <button
-                  onClick={handleRefresh}
+                  onClick={() => {}}
                   disabled={isLoading}
                   className="flex-1 sm:flex-none inline-flex items-center justify-center px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-300 bg-gray-800/50 border border-gray-700 rounded-lg hover:bg-gray-700/50 hover:text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -336,16 +270,38 @@ export const Home = () => {
                   <span className="hidden sm:inline">Refresh</span>
                 </button>
                 <button
-                  onClick={handleExport}
-                  disabled={logs.length === 0}
+                  onClick={() => {}}
+                  disabled={
+                    !activeTabId ||
+                    !tabLogs[activeTabId] ||
+                    tabLogs[activeTabId].length === 0
+                  }
                   className="flex-1 sm:flex-none inline-flex items-center justify-center px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Download className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                   <span className="hidden sm:inline">Export</span>
                 </button>
-
                 <button className="inline-flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all duration-200">
                   <Settings className="w-3 h-3 sm:w-4 sm:h-4" />
+                </button>
+                <button
+                  onClick={logout}
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-red-400 bg-gray-800/50 border border-gray-700 rounded-lg hover:bg-red-500/20 hover:text-red-500 transition-all duration-200"
+                >
+                  <svg
+                    className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h4a2 2 0 012 2v1"
+                    />
+                  </svg>
+                  <span className="hidden sm:inline">Logout</span>
                 </button>
               </div>
             </div>
@@ -353,48 +309,65 @@ export const Home = () => {
         </div>
       </header>
 
+      {/* Modern Search and Date/Time Filter Bar */}
+      <DateTimeSearchBar
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+        isLoading={isLoading}
+        onSearch={handleSearch}
+      />
+
       {/* Provider-specific filters */}
       <ProviderFilters
         selectedProvider={selectedProvider}
         selectedProject={selectedProject}
-        setSelectedProject={handleProjectChange}
+        setSelectedProject={setSelectedProject}
         projects={projects}
         selectedService={selectedService}
         onServiceSelect={handleServiceSelect}
-        selectedDeployment={selectedDeployment}
-        onDeploymentSelect={handleDeploymentSelect}
+        selectedDeployment={undefined}
+        onDeploymentSelect={() => {}}
       />
-
-      {/* Common filters - independent of provider */}
-      <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-3 sm:py-4">
-        <CommonFilters
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          showAdvancedFilters={showAdvancedFilters}
-          setShowAdvancedFilters={setShowAdvancedFilters}
-          filters={filters}
-          onFiltersChange={handleFiltersChange}
-          handleSearch={handleSearch}
-          isLoading={isLoading}
-          disabled={
-            !selectedProvider ||
-            (selectedProvider.id === "gcp" &&
-              (!selectedProject ||
-                !selectedService ||
-                (selectedService.isDeploymentBased && !selectedDeployment)))
-          }
-        />
-      </div>
 
       {/* Tabs */}
       {tabs.length > 0 && (
-        <div className="bg-gray-900/20 border-b border-gray-800/50">
+        <div className="">
           <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
             <LogTabs
               tabs={tabs}
               activeTabId={activeTabId}
               onTabSelect={handleTabSelect}
               onTabClose={handleTabClose}
+              onOpenQueryBuilder={handleOpenQueryBuilder}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Query Builder Modal (only when settings icon is clicked and tab exists) */}
+      {openQueryBuilderTabId && currentTab && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Close button */}
+            <button
+              className="absolute top-4 right-4 z-10 p-2 bg-gray-800 text-gray-300 rounded-full hover:bg-gray-700 hover:text-white transition-all shadow-lg"
+              onClick={handleCloseQueryBuilder}
+              title="Close Query Builder"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Query Builder */}
+            <GCPQueryBuilder
+              tab={currentTab}
+              projectId={selectedProject}
+              onUpdateTab={handleUpdateTab}
+              onQuerySubmit={handleQuerySubmit}
+              isActive={true}
             />
           </div>
         </div>
@@ -413,13 +386,14 @@ export const Home = () => {
                     <h3 className="text-base sm:text-lg xl:text-xl font-semibold text-white">
                       Log Entries
                     </h3>
-                    {logs.length > 0 && (
-                      <span className="inline-flex items-center px-2 py-0.5 sm:px-2.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
-                        {logs.length} entries
-                      </span>
-                    )}
+                    {activeTabId &&
+                      tabLogs[activeTabId] &&
+                      tabLogs[activeTabId].length > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 sm:px-2.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
+                          {tabLogs[activeTabId].length} entries
+                        </span>
+                      )}
                   </div>
-
                   {isLoading && (
                     <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
                       <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
@@ -430,9 +404,11 @@ export const Home = () => {
                   )}
                 </div>
               </div>
-
               <div className="relative">
-                {logs.length === 0 && !isLoading ? (
+                {(!activeTabId ||
+                  !tabLogs[activeTabId] ||
+                  tabLogs[activeTabId].length === 0) &&
+                !isLoading ? (
                   <div className="flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
                     <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
                       <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
@@ -443,15 +419,12 @@ export const Home = () => {
                     <p className="text-gray-500 text-center max-w-sm sm:max-w-md xl:max-w-lg text-xs sm:text-sm xl:text-lg">
                       {!selectedProject || !selectedService
                         ? "Select a project and service to start exploring logs"
-                        : selectedService?.isDeploymentBased &&
-                          !selectedDeployment
-                        ? "Select a deployment to view logs"
                         : "Try adjusting your search query or filters to find relevant logs"}
                     </p>
                   </div>
                 ) : (
                   <div className="max-h-[calc(100vh-300px)] sm:max-h-[calc(100vh-350px)] xl:max-h-[calc(100vh-400px)] overflow-y-auto">
-                    <EnhancedLogViewer logs={logs} />
+                    <EnhancedLogViewer logs={tabLogs[activeTabId] || []} />
                   </div>
                 )}
               </div>

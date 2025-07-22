@@ -70,6 +70,8 @@ async def auth_callback(code: str):
             "https://www.googleapis.com/oauth2/v2/userinfo",
             headers={"Authorization": f"Bearer {tokens['access_token']}"}
         )
+
+        accessToken = tokens['access_token']
         
         if user_response.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to get user info")
@@ -88,10 +90,10 @@ async def auth_callback(code: str):
         # Create JWT for frontend
         jwt_token = create_access_token({"sub": email})
 
-        print(f"{FRONTEND_URL}/auth/success?token={jwt_token}")
+        # print(f"{FRONTEND_URL}/auth/success?token={jwt_token}")
         
         # Redirect to frontend with token
-        return RedirectResponse(url=f"{FRONTEND_URL}/auth/success?token={jwt_token}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/auth/success?token={jwt_token}&accessToken={accessToken}")
 
 @router.post("/auth/refresh")
 async def refresh_token(current_user: str = Depends(get_current_user)):

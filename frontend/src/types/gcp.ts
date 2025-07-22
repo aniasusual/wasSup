@@ -1,11 +1,7 @@
 export interface GCPService {
     id: string;
     name: string;
-    category: "compute" | "storage" | "networking" | "security" | "operations";
-    isDeploymentBased: boolean;
-    icon: string;
-    logTypes: string[];
-    availableFilters: FilterOption[];
+    category: "compute" | "storage" | "networking" | "security" | "operations" | "data-analytics" | "ai-ml" | "api-dev" | "monitoring" | "scheduler" | "cache" | "other";
 }
 
 export interface FilterOption {
@@ -35,6 +31,8 @@ export interface FilterState {
     requestId: string;
     timeRange: string;
     customQuery: string;
+    customStartTime?: string;
+    customEndTime?: string;
 }
 
 export interface ResourceInfo {
@@ -78,4 +76,12 @@ export interface DeploymentInfo {
     zone?: string;
     namespace?: string;
     service?: string;
+    // Additional fields for different service types
+    service_name?: string; // For Cloud Run
+    revision_name?: string; // For Cloud Run
+    cluster_name?: string; // For GKE
+    pod_name?: string; // For GKE
+    instance_name?: string; // For Compute Engine
+    function_name?: string; // For Cloud Functions
+    location?: string; // Generic location field
 } 

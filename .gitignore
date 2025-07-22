@@ -21,8 +21,8 @@ ENV/
 Thumbs.db
 
 # Project specific
-logs/
-data/
+# logs/
+# data/
 *.log
 .coverage
 htmlcov/

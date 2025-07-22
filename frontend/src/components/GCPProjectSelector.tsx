@@ -80,50 +80,54 @@ export const GCPProjectSelector = ({
       {/* Selected Project Display */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg text-white hover:bg-gray-700 transition-colors"
+        className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-gray-800 to-gray-900 border border-gray-700/50 rounded-xl text-white hover:bg-gradient-to-r hover:from-gray-700 hover:to-gray-800 transition-all duration-300 shadow-sm"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           {selectedProjectData ? (
             <>
               <span className="text-xl">
-                <Building2 className="w-5 h-5" />
+                <Building2 className="w-5 h-5 text-gray-300" />
               </span>
               <div className="text-left">
-                <div className="font-medium">{selectedProjectData.name}</div>
-                <div className="text-sm text-gray-400">
+                <div className="font-semibold text-base">
+                  {selectedProjectData.name}
+                </div>
+                <div className="text-xs text-gray-300 mt-0.5">
                   {selectedProjectData.project_id}
                 </div>
               </div>
             </>
           ) : (
-            <span className="text-gray-400">Select a GCP Project</span>
+            <span className="text-gray-300 font-medium">
+              Select a GCP Project
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleToggleInputMode();
             }}
-            className="flex items-center space-x-1 text-xs text-gray-400 hover:text-gray-300 transition-colors duration-200"
+            className="flex items-center gap-1 text-xs text-gray-300 hover:text-white transition-all duration-200"
             title={
               isManualInput ? "Switch to dropdown" : "Enter project ID manually"
             }
           >
             {isManualInput ? (
               <>
-                <List className="w-3 h-3" />
+                <List className="w-4 h-4" />
                 <span>List</span>
               </>
             ) : (
               <>
-                <Edit3 className="w-3 h-3" />
+                <Edit3 className="w-4 h-4" />
                 <span>Manual</span>
               </>
             )}
           </button>
           <ChevronDown
-            className={`w-5 h-5 text-gray-400 transition-transform ${
+            className={`w-5 h-5 text-gray-300 transition-transform duration-300 ${
               isOpen ? "rotate-180" : ""
             }`}
           />
@@ -132,14 +136,14 @@ export const GCPProjectSelector = ({
 
       {/* Manual Input Mode */}
       {isManualInput && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-50 p-3">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-700/50 rounded-xl shadow-2xl z-50 p-4">
           <div className="space-y-3">
             <input
               type="text"
               value={manualProjectId}
               onChange={(e) => setManualProjectId(e.target.value)}
               placeholder="Enter project ID (e.g., my-project-123)"
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+              className="w-full px-4 py-2.5 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200 text-sm font-medium"
               onKeyPress={(e) => {
                 if (e.key === "Enter") {
                   handleManualProjectSubmit();
@@ -149,7 +153,7 @@ export const GCPProjectSelector = ({
             <button
               onClick={handleManualProjectSubmit}
               disabled={!manualProjectId.trim() || isSettingProject}
-              className="w-full px-3 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-600/80 hover:bg-blue-600 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
             >
               {isSettingProject ? "Setting..." : "Set Project"}
             </button>
@@ -159,48 +163,48 @@ export const GCPProjectSelector = ({
 
       {/* Dropdown */}
       {isOpen && !isManualInput && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-50 max-h-96 overflow-hidden">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-700/50 rounded-xl shadow-2xl z-50 max-h-[32rem] overflow-hidden">
           {/* Search */}
-          <div className="p-3 border-b border-gray-700">
+          <div className="p-4 border-b border-gray-700/50">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search projects..."
-                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200 text-sm font-medium"
               />
             </div>
           </div>
 
           {/* Project List */}
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-[28rem] overflow-y-auto custom-scrollbar">
             <div className="p-2">
               {filteredProjects.map((project) => (
                 <button
                   key={project.project_id}
                   onClick={() => handleProjectSelect(project.project_id)}
-                  className="w-full flex items-center gap-3 p-3 text-left text-white hover:bg-gray-800 rounded-lg transition-colors"
+                  className="w-full flex items-center gap-3 p-3 text-left text-white hover:bg-gray-800/50 rounded-lg transition-all duration-200"
                 >
                   <span className="text-xl">
-                    <Building2 className="w-5 h-5" />
+                    <Building2 className="w-5 h-5 text-gray-300" />
                   </span>
                   <div className="flex-1">
-                    <div className="font-medium">{project.name}</div>
-                    <div className="text-sm text-gray-400">
+                    <div className="font-semibold text-sm">{project.name}</div>
+                    <div className="text-xs text-gray-300 mt-0.5">
                       {project.project_id}
                     </div>
                   </div>
                   {project.project_id === selectedProject && (
-                    <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">
+                    <span className="text-xs bg-blue-600/80 text-white px-2 py-1 rounded-lg font-medium">
                       Selected
                     </span>
                   )}
                 </button>
               ))}
               {filteredProjects.length === 0 && (
-                <div className="p-3 text-gray-400 text-center">
+                <div className="p-3 text-gray-300 text-center text-sm">
                   No projects found
                 </div>
               )}

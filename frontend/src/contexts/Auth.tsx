@@ -10,6 +10,10 @@ const AuthContext = createContext<any>(null);
 
 export const AuthProvider = ({ children }: any) => {
   const [token, setToken] = useState(localStorage.getItem("token"));
+  const [accesstoken, setaccesstoken] = useState(
+    localStorage.getItem("accessToken")
+  );
+
   const [isAuthenticated, setIsAuthenticated] = useState(!!token);
 
   useEffect(() => {
@@ -18,11 +22,13 @@ export const AuthProvider = ({ children }: any) => {
     } else {
       delete axios.defaults.headers.common["Authorization"];
     }
-  }, [token]);
+  }, [token, accesstoken]);
 
-  const login = (newToken: any) => {
-    localStorage.setItem("token", newToken);
-    setToken(newToken);
+  const login = (token: any, accessToken: any) => {
+    localStorage.setItem("token", token);
+    localStorage.setItem("accessToken", accessToken);
+    setToken(token);
+    setaccesstoken(accessToken);
     setIsAuthenticated(true);
   };
 
@@ -38,7 +44,9 @@ export const AuthProvider = ({ children }: any) => {
   };
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, login, logout }}>
+    <AuthContext.Provider
+      value={{ token, accesstoken, isAuthenticated, login, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
