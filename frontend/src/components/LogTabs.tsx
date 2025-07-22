@@ -1,20 +1,33 @@
-import { useState, useRef, useEffect } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { X, ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import type { LogTab } from "../types/gcp";
+import { GCP_RESOURCE_MAPPINGS } from "../data/gcpResourceMappings";
 
 interface LogTabsProps {
   tabs: LogTab[];
   activeTabId: string;
   onTabSelect: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
+  onOpenQueryBuilder: (tabId: string) => void;
   className?: string;
 }
+
+const getServiceIcon = (serviceId: string) => {
+  return null;
+};
+
+const getTabTitle = (tab: LogTab) => {
+  const svc =
+    GCP_RESOURCE_MAPPINGS[tab.serviceId as keyof typeof GCP_RESOURCE_MAPPINGS];
+  return svc ? svc.id : tab.title;
+};
 
 export const LogTabs = ({
   tabs,
   activeTabId,
   onTabSelect,
   onTabClose,
+  onOpenQueryBuilder,
   className = "",
 }: LogTabsProps) => {
   const [showLeftArrow, setShowLeftArrow] = useState(false);
@@ -22,31 +35,59 @@ export const LogTabs = ({
   const tabsContainerRef = useRef<HTMLDivElement>(null);
   const tabsWrapperRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    checkScrollButtons();
-  }, [tabs]);
-
-  const checkScrollButtons = () => {
-    if (!tabsContainerRef.current || !tabsWrapperRef.current) return;
-
+  const checkScrollButtons = useCallback(() => {
     const container = tabsContainerRef.current;
     const wrapper = tabsWrapperRef.current;
+    if (!container || !wrapper) return;
 
-    setShowLeftArrow(wrapper.scrollLeft > 0);
-    setShowRightArrow(
-      wrapper.scrollLeft < wrapper.scrollWidth - container.clientWidth
+    const leftArrowNeeded = wrapper.scrollLeft > 0;
+    const rightArrowNeeded =
+      wrapper.scrollLeft + container.offsetWidth < wrapper.scrollWidth;
+
+    setShowLeftArrow((prev) =>
+      prev !== leftArrowNeeded ? leftArrowNeeded : prev
     );
-  };
+    setShowRightArrow((prev) =>
+      prev !== rightArrowNeeded ? rightArrowNeeded : prev
+    );
+  }, []);
+
+  useEffect(() => {
+    checkScrollButtons();
+
+    const container = tabsContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      checkScrollButtons();
+    });
+
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [checkScrollButtons]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkScrollButtons();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [tabs.length, checkScrollButtons]);
 
   const scrollLeft = () => {
-    if (tabsWrapperRef.current) {
-      tabsWrapperRef.current.scrollBy({ left: -200, behavior: "smooth" });
+    const wrapper = tabsWrapperRef.current;
+    if (wrapper) {
+      wrapper.scrollBy({ left: -200, behavior: "smooth" });
     }
   };
 
   const scrollRight = () => {
-    if (tabsWrapperRef.current) {
-      tabsWrapperRef.current.scrollBy({ left: 200, behavior: "smooth" });
+    const wrapper = tabsWrapperRef.current;
+    if (wrapper) {
+      wrapper.scrollBy({ left: 200, behavior: "smooth" });
     }
   };
 
@@ -55,52 +96,102 @@ export const LogTabs = ({
     onTabClose(tabId);
   };
 
-  const getTabTitle = (tab: LogTab) => {
-    if (tab.deploymentId) {
-      return `${tab.title} - ${tab.deploymentId}`;
-    }
-    return tab.title;
-  };
-
   return (
-    <div className={`bg-gray-900 border-b border-gray-800 ${className}`}>
-      <div className="flex items-center">
+    <nav className={`relative w-full ${className}`} aria-label="Log Tabs Bar">
+      <div className="flex items-end h-14">
         {/* Scroll Left Button */}
         {showLeftArrow && (
           <button
             onClick={scrollLeft}
-            className="flex-shrink-0 p-1.5 sm:p-2 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            aria-label="Scroll tabs left"
+            className="flex-shrink-0 ml-3 mb-2 p-2 rounded-full bg-gray-800/80 hover:bg-gray-700/80 transition-all duration-300 text-gray-300 hover:text-white shadow-md hover:shadow-lg z-20"
           >
-            <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
+            <ChevronLeft className="w-5 h-5" />
           </button>
         )}
 
         {/* Tabs Container */}
-        <div ref={tabsContainerRef} className="flex-1 overflow-hidden">
+        <div ref={tabsContainerRef} className="flex-1 overflow-hidden px-2">
           <div
             ref={tabsWrapperRef}
-            className="flex space-x-1 p-1.5 sm:p-2 overflow-x-auto scrollbar-hide"
+            className="flex items-end overflow-x-auto scrollbar-hide h-full"
             onScroll={checkScrollButtons}
           >
-            {tabs.map((tab) => (
+            {tabs.map((tab, index) => (
               <div
                 key={tab.id}
                 onClick={() => onTabSelect(tab.id)}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-t-lg cursor-pointer transition-colors flex-shrink-0 min-w-0 ${
-                  tab.id === activeTabId
-                    ? "bg-gray-800 text-white border-b-2 border-blue-500"
-                    : "bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white"
-                }`}
+                className={`group relative flex items-center gap-2 px-4 py-3 cursor-pointer min-w-[180px] flex-shrink-0 transition-all duration-300 select-none
+                  ${
+                    tab.id === activeTabId
+                      ? "bg-gradient-to-b from-gray-800 to-gray-900 text-white border-t-2 border-blue-500 shadow-xl"
+                      : "bg-gray-800/40 text-gray-300 hover:bg-gray-700/60 hover:text-white border-t-2 border-transparent hover:border-gray-600/70"
+                  }
+                  ${index === 0 ? "rounded-tl-xl ml-3" : ""}
+                  ${index === tabs.length - 1 ? "rounded-tr-xl mr-3" : ""}
+                `}
+                style={{
+                  clipPath:
+                    tab.id === activeTabId
+                      ? "polygon(10px 100%, 0px 10px, 10px 0%, calc(100% - 10px) 0%, 100% 10px, calc(100% - 10px) 100%)"
+                      : "polygon(0 100%, 0 0, 100% 0, 100% 100%)",
+                  marginRight:
+                    tab.id === activeTabId && index !== tabs.length - 1
+                      ? "-10px"
+                      : "2px",
+                  zIndex: tab.id === activeTabId ? 30 : 20 - index,
+                }}
+                aria-current={tab.id === activeTabId ? "page" : undefined}
+                tabIndex={0}
+                role="tab"
               >
-                <span className="truncate max-w-20 sm:max-w-32 text-xs sm:text-sm">
-                  {getTabTitle(tab)}
-                </span>
-                <button
-                  onClick={(e) => handleTabClose(e, tab.id)}
-                  className="flex-shrink-0 p-0.5 sm:p-1 rounded hover:bg-gray-600 transition-colors"
-                >
-                  <X className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                </button>
+                {/* Tab background overlay */}
+                <div
+                  className={`absolute inset-0 ${
+                    tab.id === activeTabId
+                      ? "bg-gradient-to-b from-blue-500/10 to-transparent"
+                      : "bg-gradient-to-b from-gray-700/10 to-transparent"
+                  }`}
+                  style={{
+                    clipPath: "inherit",
+                  }}
+                />
+
+                <div className="relative flex items-center justify-between w-full gap-2 z-10">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {getServiceIcon(tab.serviceId)}
+                    <span className="truncate max-w-[100px] text-sm font-semibold tracking-tight">
+                      {getTabTitle(tab)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {/* Query Builder Icon */}
+                    <button
+                      className="p-1.5 rounded-full hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 focus:bg-blue-500/40 focus:text-blue-200 transition-all duration-200 flex-shrink-0"
+                      title="Open Query Builder"
+                      aria-label="Open Query Builder"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenQueryBuilder(tab.id);
+                      }}
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                    {/* Close Button */}
+                    <button
+                      onClick={(e) => handleTabClose(e, tab.id)}
+                      className={`p-1 rounded-full transition-all duration-200 flex-shrink-0 ${
+                        tab.id === activeTabId
+                          ? "text-gray-300 hover:bg-red-500/30 hover:text-red-300"
+                          : "text-gray-400 hover:bg-red-500/30 hover:text-red-300 opacity-0 group-hover:opacity-100"
+                      }`}
+                      title="Close tab"
+                      aria-label="Close tab"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -110,12 +201,16 @@ export const LogTabs = ({
         {showRightArrow && (
           <button
             onClick={scrollRight}
-            className="flex-shrink-0 p-1.5 sm:p-2 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            aria-label="Scroll tabs right"
+            className="flex-shrink-0 mr-3 mb-2 p-2 rounded-full bg-gray-800/80 hover:bg-gray-700/80 transition-all duration-300 text-gray-300 hover:text-white shadow-md hover:shadow-lg z-20"
           >
-            <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
+            <ChevronRight className="w-5 h-5" />
           </button>
         )}
       </div>
-    </div>
+
+      {/* Tab bar bottom border */}
+      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gray-600/40 to-transparent" />
+    </nav>
   );
 };

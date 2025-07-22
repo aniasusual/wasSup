@@ -15,9 +15,10 @@ export const AuthSuccess = () => {
 
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get("token");
+    const accessToken = urlParams.get("accessToken");
 
-    if (token) {
-      login(token);
+    if (token && accessToken) {
+      login(token, accessToken);
       window.history.replaceState({}, document.title, "/");
     } else {
       setError("No token received");

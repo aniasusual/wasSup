@@ -55,7 +55,7 @@ def store_user_tokens(email: str, access_token: str, refresh_token: Optional[str
         "expires_at": datetime.utcnow() + timedelta(seconds=expires_in)
     }
 
-    print("userTokens", user_tokens)
+    # print("userTokens", user_tokens)
 
 def get_user_tokens(email: str) -> Optional[Dict]:
     """Get user tokens"""
