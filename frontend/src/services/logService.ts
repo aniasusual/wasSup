@@ -30,6 +30,7 @@ export interface LogQueryParams {
     searchQuery?: string;
     pageSize?: number;
     pageToken?: string;
+    filter?: string; // Added for direct filter string
 }
 
 export interface LogResponse {
@@ -39,9 +40,12 @@ export interface LogResponse {
 }
 
 export const useLogService = () => {
-    const { accesstoken } = useAuth();
+    const { token } = useAuth();
 
     const buildFilterString = (params: LogQueryParams): string => {
+        if (params.filter) {
+            return params.filter;
+        }
         const filters: string[] = [];
 
         // Base resource type filter
@@ -171,68 +175,100 @@ export const useLogService = () => {
         return filters.join(" AND ");
     };
 
-    const fetchLogs = async (params: LogQueryParams): Promise<LogResponse> => {
-        if (!accesstoken) {
+    const fetchLogs = async (params: LogQueryParams): Promise<any> => {
+        if (!token) {
             throw new Error("No authentication token available");
         }
 
+        const filterString = params.filter ? params.filter : buildFilterString(params);
+
+        // Backend request body
+        const backendRequestBody: any = {
+            projectId: params.projectId,
+            filter: filterString,
+            orderBy: "timestamp desc",
+            pageSize: params.pageSize || 100,
+        };
+        if (params.pageToken) {
+            backendRequestBody.pageToken = params.pageToken;
+        }
+
+        // Try backend first
         try {
-            const filterString = buildFilterString(params);
-
-            const requestBody: any = {
-                resourceNames: [`projects/${params.projectId}`],
-                filter: filterString,
-                orderBy: "timestamp desc",
-                pageSize: params.pageSize || 100
-            };
-
-            if (params.pageToken) {
-                requestBody.pageToken = params.pageToken;
-            }
-
             const response = await axios.post(
-                'https://logging.googleapis.com/v2/entries:list',
-                requestBody,
+                '/api/v1/logs/fetch',
+                backendRequestBody,
                 {
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${accesstoken}`,
+                        Authorization: `Bearer ${token}`,
                     },
                 }
             );
-
-            // Transform the response to match our LogEntry format
-            const logs = response.data.entries?.map((entry: any) => ({
-                id: entry.insertId || Math.random().toString(),
-                timestamp: new Date(entry.timestamp),
-                severity: entry.severity || "DEFAULT",
-                message: entry.textPayload || (entry.jsonPayload?.message || JSON.stringify(entry.jsonPayload) || ""),
-                resource: {
-                    type: entry.resource?.type || "",
-                    labels: entry.resource?.labels || {}
-                },
-                labels: entry.labels || {},
-                jsonPayload: entry.jsonPayload,
-                textPayload: entry.textPayload,
-                httpRequest: entry.httpRequest,
-                traceId: entry.trace,
-                spanId: entry.spanId,
-                logName: entry.logName
-            })) || [];
-
-            return {
-                logs,
-                nextPageToken: response.data.nextPageToken,
-                totalEntries: response.data.entries?.length || 0
-            };
-
-        } catch (error: any) {
-            console.error("Error fetching logs:", error);
-            if (error.response?.data?.error?.message) {
-                throw new Error(error.response.data.error.message);
+            // If backend returns logs in expected format, return them
+            if (response.data && Array.isArray(response.data.logs)) {
+                return {
+                    logs: response.data.logs,
+                    nextPageToken: response.data.nextPageToken,
+                    totalEntries: response.data.totalEntries,
+                };
             }
-            throw error;
+            // If backend response is malformed, fall through to fallback
+        } catch (error: any) {
+            // Fallback to direct Google API if backend fails
+            console.warn("Backend log fetch failed, falling back to direct GCP API", error);
         }
+
+        // Fallback: direct Google API call
+        // try {
+        //     const requestBody: any = {
+        //         resourceNames: [`projects/${params.projectId}`],
+        //         filter: filterString,
+        //         orderBy: "timestamp desc",
+        //         pageSize: params.pageSize || 100
+        //     };
+        //     if (params.pageToken) {
+        //         requestBody.pageToken = params.pageToken;
+        //     }
+        //     const response = await axios.post(
+        //         'https://logging.googleapis.com/v2/entries:list',
+        //         requestBody,
+        //         {
+        //             headers: {
+        //                 "Content-Type": "application/json",
+        //                 Authorization: `Bearer ${accesstoken}`,
+        //             },
+        //         }
+        //     );
+        //     const logs = response.data.entries?.map((entry: any) => ({
+        //         id: entry.insertId || Math.random().toString(),
+        //         timestamp: new Date(entry.timestamp),
+        //         severity: entry.severity || "DEFAULT",
+        //         message: entry.textPayload || (entry.jsonPayload?.message || JSON.stringify(entry.jsonPayload) || ""),
+        //         resource: {
+        //             type: entry.resource?.type || "",
+        //             labels: entry.resource?.labels || {}
+        //         },
+        //         labels: entry.labels || {},
+        //         jsonPayload: entry.jsonPayload,
+        //         textPayload: entry.textPayload,
+        //         httpRequest: entry.httpRequest,
+        //         traceId: entry.trace,
+        //         spanId: entry.spanId,
+        //         logName: entry.logName
+        //     })) || [];
+        //     return {
+        //         logs,
+        //         nextPageToken: response.data.nextPageToken,
+        //         totalEntries: response.data.entries?.length || 0
+        //     };
+        // } catch (error: any) {
+        //     console.error("Error fetching logs (fallback):", error);
+        //     if (error.response?.data?.error?.message) {
+        //         throw new Error(error.response.data.error.message);
+        //     }
+        //     throw error;
+        // }
     };
 
     return {

@@ -39,6 +39,8 @@ async def get_current_user(request: Request):
 
     token = token.split(" ")[1]
 
+    print("token: ", token)
+
     email = verify_token(token)
     
     if email not in user_tokens:
