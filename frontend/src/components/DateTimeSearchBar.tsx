@@ -133,7 +133,7 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
   );
 
   return (
-    <div className="w-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl backdrop-blur-sm">
+    <div className="w-full rounded-2xl shadow-2xl backdrop-blur-sm">
       {/* Main Search Bar */}
       <div className="p-4 sm:p-6">
         <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
