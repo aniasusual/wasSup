@@ -191,7 +191,7 @@ export const Home = () => {
 
   const currentTab = getCurrentTab();
 
-  // Fetch logs for a specific tab
+  // Fetch logs for a specific tab, always applying global search and time filters
   const fetchLogsForTab = async (tab: LogTab) => {
     if (!selectedProject || !tab) return;
     setIsLoading(true);
@@ -202,6 +202,9 @@ export const Home = () => {
         filter: tab.query, // Use as filter if present
         filters: {
           ...tab.filters,
+          customQuery: searchQuery, // Apply global search
+          customStartTime: startDate, // Apply global start time
+          customEndTime: endDate, // Apply global end time
         },
       });
       setTabLogs((prev) => ({ ...prev, [tab.id]: res.logs }));
@@ -212,14 +215,14 @@ export const Home = () => {
     }
   };
 
-  // Fetch logs when active tab or its filters/query changes
+  // Fetch logs when active tab, global filters, or its filters/query changes
   useEffect(() => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (activeTab && selectedProject) {
       fetchLogsForTab(activeTab);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTabId, selectedProject, tabs]);
+  }, [activeTabId, selectedProject, tabs, searchQuery, startDate, endDate]);
 
   return (
     <div className="bg-gray-950 min-h-screen flex flex-col">
@@ -310,18 +313,6 @@ export const Home = () => {
         </div>
       </header>
 
-      {/* Modern Search and Date/Time Filter Bar */}
-      <DateTimeSearchBar
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
-        isLoading={isLoading}
-        onSearch={handleSearch}
-      />
-
       {/* Provider-specific filters */}
       <ProviderFilters
         selectedProvider={selectedProvider}
@@ -332,6 +323,17 @@ export const Home = () => {
         onServiceSelect={handleServiceSelect}
         selectedDeployment={undefined}
         onDeploymentSelect={() => {}}
+      />
+      {/* Modern Search and Date/Time Filter Bar */}
+      <DateTimeSearchBar
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+        isLoading={isLoading}
+        onSearch={handleSearch}
       />
 
       {/* Tabs */}
