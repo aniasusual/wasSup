@@ -44,9 +44,19 @@ const getSeverityColor = (severity: string) => {
   }
 };
 
-const formatTimestamp = (timestamp: Date) => {
+const formatTimestamp = (timestamp: string | Date | null) => {
+  if (!timestamp) return "No timestamp";
+
   const now = new Date();
-  const diff = now.getTime() - timestamp.getTime();
+  const timestampDate =
+    typeof timestamp === "string" ? new Date(timestamp) : timestamp;
+
+  // Check if the date is valid
+  if (isNaN(timestampDate.getTime())) {
+    return "Invalid date";
+  }
+
+  const diff = now.getTime() - timestampDate.getTime();
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
@@ -125,17 +135,20 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
         </div>
 
         {/* Resource Info */}
-        <div className="mt-2 text-sm text-gray-400">
-          <span className="font-medium">Resource:</span> {log.resource.type}
-          {Object.entries(log.resource.labels).map(([key, value]) => (
-            <span key={key} className="ml-2">
-              {key}={value}
-            </span>
-          ))}
-        </div>
+        {log.resource && (
+          <div className="mt-2 text-sm text-gray-400">
+            <span className="font-medium">Resource:</span> {log.resource.type}
+            {log.resource.labels &&
+              Object.entries(log.resource.labels).map(([key, value]) => (
+                <span key={key} className="ml-2">
+                  {key}={value}
+                </span>
+              ))}
+          </div>
+        )}
 
         {/* Labels */}
-        {Object.keys(log.labels).length > 0 && (
+        {log.labels && Object.keys(log.labels).length > 0 && (
           <div className="mt-2 text-sm text-gray-400">
             <span className="font-medium">Labels:</span>
             {Object.entries(log.labels).map(([key, value]) => (

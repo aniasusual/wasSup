@@ -11,6 +11,7 @@ import type { GCPService, LogTab } from "../types/gcp";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
 import { getServiceById } from "../data/gcpResourceMappings";
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
+import type { LogQueryParams } from "../services/logService";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -198,7 +199,7 @@ export const Home = () => {
       const res = await fetchLogs({
         projectId: selectedProject,
         serviceId: tab.filters.resourceType,
-        searchQuery: tab.query,
+        filter: tab.query, // Use as filter if present
         filters: {
           ...tab.filters,
         },

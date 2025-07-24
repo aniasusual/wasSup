@@ -1,883 +1,8 @@
-// import React, { useState, useEffect, useCallback, useRef } from "react";
-// import { GCP_RESOURCE_MAPPINGS as RAW_MAPPINGS } from "../data/gcpResourceMappings";
-// import { GCP_API_ENDPOINTS as RAW_API_ENDPOINTS } from "../data/gcpApiEndpoints";
-// import { FALLBACK_DATA as RAW_FALLBACK_DATA } from "../data/fallbackData";
-// import {
-//   ChevronDown,
-//   Plus,
-//   Trash2,
-//   Loader2,
-//   AlertCircle,
-//   Bug,
-//   CheckCircle,
-//   XCircle,
-// } from "lucide-react";
-// import type { LogTab } from "../types/gcp";
-// import { useAuth } from "../contexts/Auth";
-
-// const GCP_RESOURCE_MAPPINGS: Record<
-//   string,
-//   { labels: string[]; additionalQueries: string[] }
-// > = RAW_MAPPINGS;
-
-// const GCP_API_ENDPOINTS: Record<string, any> = RAW_API_ENDPOINTS;
-// const FALLBACK_DATA: Record<
-//   string,
-//   Record<string, string[]>
-// > = RAW_FALLBACK_DATA;
-
-// const SEVERITY_OPTIONS = ["ERROR", "WARNING", "INFO", "DEBUG"];
-// const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-// const apiCache = new Map<string, { data: any; timestamp: number }>();
-
-// interface GCPQueryBuilderProps {
-//   tab: LogTab;
-//   projectId: string;
-//   onUpdateTab: (tab: LogTab) => void;
-//   onQuerySubmit: (query: string) => void;
-//   isActive: boolean;
-// }
-
-// interface ApiStatus {
-//   [key: string]: {
-//     status: "loading" | "success" | "error" | "fallback";
-//     message?: string;
-//     endpoint?: string;
-//   };
-// }
-
-// export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
-//   tab,
-//   projectId,
-//   onUpdateTab,
-//   onQuerySubmit,
-//   isActive,
-// }) => {
-//   const { accesstoken } = useAuth();
-//   const [resourceType, setResourceType] = useState<string>(
-//     tab.filters.resourceType || "cloud_run_revision"
-//   );
-//   const [resourceLabels, setResourceLabels] = useState<Record<string, string>>(
-//     {}
-//   );
-//   const [labelOptions, setLabelOptions] = useState<Record<string, string[]>>(
-//     {}
-//   );
-//   const [labelLoading, setLabelLoading] = useState<Record<string, boolean>>({});
-//   const [labelError, setLabelError] = useState<Record<string, string>>({});
-//   const [additionalQueries, setAdditionalQueries] = useState<any[]>([]);
-//   const [showAddQuery, setShowAddQuery] = useState(false);
-//   const [queryPreview, setQueryPreview] = useState("");
-//   const [error, setError] = useState<string>("");
-//   const [dependencyValues, setDependencyValues] = useState<
-//     Record<string, string>
-//   >({});
-//   const [debugInfo, setDebugInfo] = useState<string[]>([]);
-//   const [showDebug, setShowDebug] = useState(false);
-//   const [apiStatus, setApiStatus] = useState<ApiStatus>({});
-
-//   // Use refs to track the latest values to prevent stale closures
-//   const resourceTypeRef = useRef(resourceType);
-//   const projectIdRef = useRef(projectId);
-
-//   // Update refs when values change
-//   useEffect(() => {
-//     resourceTypeRef.current = resourceType;
-//   }, [resourceType]);
-
-//   useEffect(() => {
-//     projectIdRef.current = projectId;
-//   }, [projectId]);
-
-//   // Add debug message with useCallback to prevent recreation
-//   const addDebugMessage = useCallback((message: string) => {
-//     console.log(`[QueryBuilder] ${message}`);
-//     setDebugInfo((prev) => [
-//       ...prev.slice(-20),
-//       `${new Date().toLocaleTimeString()}: ${message}`,
-//     ]);
-//   }, []);
-
-//   // Initialize with fallback data for immediate dropdown display
-//   useEffect(() => {
-//     const fallbackForResourceType = FALLBACK_DATA[resourceType];
-//     if (fallbackForResourceType) {
-//       addDebugMessage(`Initializing with fallback data for ${resourceType}`);
-//       setLabelOptions(fallbackForResourceType);
-
-//       // Set initial API status for all labels
-//       const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
-//       if (mapping) {
-//         const initialStatus: ApiStatus = {};
-//         mapping.labels.forEach((label) => {
-//           const hasApiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[
-//             label
-//           ];
-//           initialStatus[label] = hasApiConfig
-//             ? { status: "fallback", message: "Using fallback data initially" }
-//             : { status: "fallback", message: "No API endpoint available" };
-//         });
-//         setApiStatus(initialStatus);
-//       }
-//     }
-//   }, [resourceType, addDebugMessage]);
-
-//   // Helper: fetch with auth and cache
-//   const fetchWithAuth = useCallback(
-//     async (key: string, endpoint: string) => {
-//       addDebugMessage(`Attempting API call: ${endpoint}`);
-
-//       if (!accesstoken) {
-//         addDebugMessage("No access token - using fallback data");
-//         throw new Error("No access token available");
-//       }
-
-//       const now = Date.now();
-//       const cached = apiCache.get(key);
-//       if (cached && now - cached.timestamp < CACHE_TTL) {
-//         addDebugMessage(`Using cached response for: ${key}`);
-//         return cached.data;
-//       }
-
-//       try {
-//         const response = await fetch(endpoint, {
-//           headers: {
-//             Authorization: `Bearer ${accesstoken}`,
-//             "Content-Type": "application/json",
-//           },
-//         });
-
-//         addDebugMessage(`API response status: ${response.status}`);
-
-//         if (!response.ok) {
-//           const errorText = await response.text();
-//           addDebugMessage(`API error: ${response.status} - ${errorText}`);
-//           throw new Error(`API call failed: ${response.status} - ${errorText}`);
-//         }
-
-//         const data = await response.json();
-//         addDebugMessage(`API call successful for: ${key}`);
-//         apiCache.set(key, { data, timestamp: now });
-//         return data;
-//       } catch (error: any) {
-//         addDebugMessage(`API call failed: ${error.message}`);
-//         throw error;
-//       }
-//     },
-//     [accesstoken, addDebugMessage]
-//   );
-
-//   // Helper function to transform API data with logging
-//   const transformApiData = useCallback(
-//     (resourceType: string, label: string, data: any) => {
-//       const apiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[label];
-//       if (!apiConfig || !apiConfig.transform) {
-//         console.log(`No transform function for ${resourceType}.${label}`);
-//         return [];
-//       }
-
-//       console.log(`API response for ${resourceType}.${label}:`, data);
-//       const result = apiConfig.transform(data);
-//       console.log(`Transformed result for ${resourceType}.${label}:`, result);
-//       return result;
-//     },
-//     []
-//   );
-
-//   // Fetch dropdown options for a label
-//   const fetchDropdownOptions = useCallback(
-//     async (
-//       label: string,
-//       currentProjectId: string,
-//       labelDeps: Record<string, string>
-//     ) => {
-//       const currentResourceType = resourceTypeRef.current;
-//       addDebugMessage(`Fetching options for ${currentResourceType}.${label}`);
-
-//       const apiConfig = (GCP_API_ENDPOINTS as any)[currentResourceType]?.[
-//         label
-//       ];
-//       if (!apiConfig) {
-//         addDebugMessage(
-//           `No API config found for ${currentResourceType}.${label} - using fallback`
-//         );
-//         const fallbackOptions =
-//           FALLBACK_DATA[currentResourceType]?.[label] || [];
-//         setLabelOptions((prev) => ({ ...prev, [label]: fallbackOptions }));
-//         setApiStatus((prev) => ({
-//           ...prev,
-//           [label]: { status: "fallback", message: "No API endpoint available" },
-//         }));
-//         return fallbackOptions;
-//       }
-
-//       // Check if endpoint is marked as unavailable
-//       const endpoint = apiConfig.endpoint(currentProjectId);
-//       if (endpoint.startsWith("#")) {
-//         addDebugMessage(`API endpoint unavailable for ${label}: ${endpoint}`);
-//         const fallbackOptions =
-//           FALLBACK_DATA[currentResourceType]?.[label] || [];
-//         setLabelOptions((prev) => ({ ...prev, [label]: fallbackOptions }));
-//         setApiStatus((prev) => ({
-//           ...prev,
-//           [label]: {
-//             status: "fallback",
-//             message: `API not available: ${endpoint.replace("#", "")}`,
-//             endpoint,
-//           },
-//         }));
-//         return fallbackOptions;
-//       }
-
-//       setLabelLoading((prev) => ({ ...prev, [label]: true }));
-//       setLabelError((prev) => ({ ...prev, [label]: "" }));
-//       setApiStatus((prev) => ({
-//         ...prev,
-//         [label]: {
-//           status: "loading",
-//           message: "Fetching from API...",
-//           endpoint,
-//         },
-//       }));
-
-//       try {
-//         let finalEndpoint: string;
-
-//         // Build endpoint with dependencies
-//         if (apiConfig.dependsOn) {
-//           if (typeof apiConfig.dependsOn === "string") {
-//             const depValue = labelDeps[apiConfig.dependsOn];
-//             if (!depValue) {
-//               addDebugMessage(
-//                 `Dependency ${apiConfig.dependsOn} not satisfied for ${label}`
-//               );
-//               setLabelLoading((prev) => ({ ...prev, [label]: false }));
-//               setApiStatus((prev) => ({
-//                 ...prev,
-//                 [label]: {
-//                   status: "fallback",
-//                   message: `Waiting for ${apiConfig.dependsOn} selection`,
-//                   endpoint,
-//                 },
-//               }));
-//               return [];
-//             }
-//             finalEndpoint = apiConfig.endpoint(currentProjectId, depValue);
-//           } else if (Array.isArray(apiConfig.dependsOn)) {
-//             const depValues = apiConfig.dependsOn.map(
-//               (dep: string) => labelDeps[dep]
-//             );
-//             if (depValues.some((val: any) => !val)) {
-//               addDebugMessage(`Some dependencies not satisfied for ${label}`);
-//               setLabelLoading((prev) => ({ ...prev, [label]: false }));
-//               setApiStatus((prev) => ({
-//                 ...prev,
-//                 [label]: {
-//                   status: "fallback",
-//                   message: `Waiting for dependencies: ${apiConfig.dependsOn.join(
-//                     ", "
-//                   )}`,
-//                   endpoint,
-//                 },
-//               }));
-//               return [];
-//             }
-//             finalEndpoint = apiConfig.endpoint(currentProjectId, ...depValues);
-//           } else {
-//             finalEndpoint = apiConfig.endpoint(currentProjectId);
-//           }
-//         } else {
-//           finalEndpoint = apiConfig.endpoint(currentProjectId);
-//         }
-
-//         const cacheKey = `${currentResourceType}:${label}:${finalEndpoint}`;
-//         const data = await fetchWithAuth(cacheKey, finalEndpoint);
-//         const options = transformApiData(currentResourceType, label, data);
-
-//         addDebugMessage(
-//           `Successfully fetched ${options.length} options for ${label}`
-//         );
-
-//         setLabelOptions((prev) => ({ ...prev, [label]: options }));
-//         setLabelLoading((prev) => ({ ...prev, [label]: false }));
-//         setApiStatus((prev) => ({
-//           ...prev,
-//           [label]: {
-//             status: "success",
-//             message: `Loaded ${options.length} items from API`,
-//             endpoint: finalEndpoint,
-//           },
-//         }));
-//         return options;
-//       } catch (err: any) {
-//         addDebugMessage(`Error fetching options for ${label}: ${err.message}`);
-
-//         // Fall back to static data on API failure
-//         const fallbackOptions =
-//           FALLBACK_DATA[currentResourceType]?.[label] || [];
-//         addDebugMessage(
-//           `Using fallback data for ${label}: ${fallbackOptions.length} options`
-//         );
-
-//         setLabelOptions((prev) => ({ ...prev, [label]: fallbackOptions }));
-//         setLabelLoading((prev) => ({ ...prev, [label]: false }));
-//         setLabelError((prev) => ({
-//           ...prev,
-//           [label]: `API failed: ${err.message}`,
-//         }));
-//         setApiStatus((prev) => ({
-//           ...prev,
-//           [label]: {
-//             status: "error",
-//             message: `API failed: ${err.message}. Using fallback data.`,
-//             endpoint,
-//           },
-//         }));
-
-//         return fallbackOptions;
-//       }
-//     },
-//     [fetchWithAuth, transformApiData, addDebugMessage]
-//   );
-
-//   // Handle resource type change - memoized to prevent infinite loops
-//   const handleResourceTypeChange = useCallback(
-//     (newResourceType: string) => {
-//       addDebugMessage(`Resource type changed to: ${newResourceType}`);
-//       setResourceType(newResourceType);
-//       setResourceLabels({});
-//       setAdditionalQueries([]);
-//       setLabelLoading({});
-//       setLabelError({});
-//       setDependencyValues({});
-//       setApiStatus({});
-
-//       // Update tab without causing re-renders
-//       const updatedTab = {
-//         ...tab,
-//         title: newResourceType
-//           .replace(/_/g, " ")
-//           .replace(/\b\w/g, (l) => l.toUpperCase()),
-//         filters: { ...tab.filters, resourceType: newResourceType },
-//       };
-
-//       // Use setTimeout to break the potential loop
-//       setTimeout(() => {
-//         onUpdateTab(updatedTab);
-//       }, 0);
-//     },
-//     [tab, onUpdateTab, addDebugMessage]
-//   );
-
-//   // Fetch options for all labels when component mounts or resourceType changes
-//   useEffect(() => {
-//     const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
-//     if (!mapping || !projectId) {
-//       addDebugMessage(
-//         `Skipping label fetch - mapping: ${!!mapping}, projectId: ${!!projectId}`
-//       );
-//       return;
-//     }
-
-//     addDebugMessage(
-//       `Fetching options for ${resourceType} labels: ${mapping.labels.join(
-//         ", "
-//       )}`
-//     );
-
-//     // Fetch options for labels that don't have dependencies first
-//     mapping.labels.forEach((label) => {
-//       const apiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[label];
-//       if (!apiConfig || !apiConfig.dependsOn) {
-//         addDebugMessage(`Fetching independent label: ${label}`);
-//         fetchDropdownOptions(label, projectId, {});
-//       } else {
-//         addDebugMessage(
-//           `Skipping dependent label: ${label} (depends on: ${apiConfig.dependsOn})`
-//         );
-//       }
-//     });
-//   }, [resourceType, projectId, fetchDropdownOptions, addDebugMessage]);
-
-//   // Handle dependencies: refetch dependent dropdowns when a dependency changes
-//   useEffect(() => {
-//     if (Object.keys(dependencyValues).length === 0) return;
-
-//     const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
-//     if (!mapping || !projectId) return;
-
-//     addDebugMessage(
-//       `Dependencies changed: ${JSON.stringify(dependencyValues)}`
-//     );
-
-//     mapping.labels.forEach((label) => {
-//       const apiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[label];
-//       if (apiConfig && apiConfig.dependsOn) {
-//         if (typeof apiConfig.dependsOn === "string") {
-//           if (dependencyValues[apiConfig.dependsOn]) {
-//             addDebugMessage(`Fetching dependent label: ${label}`);
-//             fetchDropdownOptions(label, projectId, dependencyValues);
-//           }
-//         } else if (Array.isArray(apiConfig.dependsOn)) {
-//           const allDepsSet = apiConfig.dependsOn.every(
-//             (dep: string) => dependencyValues[dep]
-//           );
-//           if (allDepsSet) {
-//             addDebugMessage(`Fetching dependent label: ${label}`);
-//             fetchDropdownOptions(label, projectId, dependencyValues);
-//           }
-//         }
-//       }
-//     });
-//   }, [
-//     dependencyValues,
-//     resourceType,
-//     projectId,
-//     fetchDropdownOptions,
-//     addDebugMessage,
-//   ]);
-
-//   // Build query preview
-//   useEffect(() => {
-//     let query = `resource.type="${resourceType}"`;
-//     const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
-//     if (mapping) {
-//       mapping.labels.forEach((label: string) => {
-//         if (resourceLabels[label]) {
-//           query += ` AND resource.labels.${label}="${resourceLabels[label]}"`;
-//         }
-//       });
-//     }
-//     additionalQueries.forEach((q: any) => {
-//       if (q.type === "severity" && q.value) {
-//         query += ` AND severity="${q.value}"`;
-//       } else if (q.type === "timestamp" && q.value) {
-//         query += ` AND timestamp${q.operator || ">="}"${q.value}"`;
-//       } else if (q.type === "custom" && q.value) {
-//         query += ` AND (${q.value})`;
-//       } else if (q.type && q.value) {
-//         query += ` AND ${q.type}="${q.value}"`;
-//       }
-//     });
-//     setQueryPreview(query);
-//   }, [resourceType, resourceLabels, additionalQueries]);
-
-//   // Handle label change
-//   const handleLabelChange = useCallback(
-//     (label: string, value: string) => {
-//       setResourceLabels((prev) => ({ ...prev, [label]: value }));
-//       // If this label is a dependency for others, update dependencyValues
-//       setDependencyValues((prev) => ({ ...prev, [label]: value }));
-//       addDebugMessage(`Label ${label} changed to: ${value}`);
-//     },
-//     [addDebugMessage]
-//   );
-
-//   // Handle add query
-//   const handleAddQuery = useCallback(
-//     (type: string, value: string, operator?: string) => {
-//       setAdditionalQueries((prev) => [...prev, { type, value, operator }]);
-//       setShowAddQuery(false);
-//     },
-//     []
-//   );
-
-//   // Remove query condition
-//   const handleRemoveQuery = useCallback((idx: number) => {
-//     setAdditionalQueries((prev) => prev.filter((_, i) => i !== idx));
-//   }, []);
-
-//   // Validate before submit
-//   const handleSubmit = useCallback(() => {
-//     if (!resourceType) {
-//       setError("Resource type is required.");
-//       return;
-//     }
-//     setError("");
-//     onQuerySubmit(queryPreview);
-//   }, [resourceType, queryPreview, onQuerySubmit]);
-
-//   // Clear all selections
-//   const handleClearAll = useCallback(() => {
-//     setResourceLabels({});
-//     setAdditionalQueries([]);
-//     setError("");
-//     setDependencyValues({});
-//   }, []);
-
-//   // Get status icon for API calls
-//   const getStatusIcon = (status: string) => {
-//     switch (status) {
-//       case "loading":
-//         return <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />;
-//       case "success":
-//         return <CheckCircle className="w-3 h-3 text-green-400" />;
-//       case "error":
-//         return <XCircle className="w-3 h-3 text-red-400" />;
-//       case "fallback":
-//         return <AlertCircle className="w-3 h-3 text-yellow-400" />;
-//       default:
-//         return null;
-//     }
-//   };
-
-//   // UI for API status display
-//   const renderApiStatus = () => {
-//     const statusEntries = Object.entries(apiStatus);
-//     if (statusEntries.length === 0) return null;
-
-//     return (
-//       <div className="mb-4 p-3 bg-gray-800 border border-gray-700 rounded">
-//         <div className="text-xs text-gray-300 mb-2">API Status:</div>
-//         <div className="space-y-1">
-//           {statusEntries.map(([label, status]) => (
-//             <div key={label} className="flex items-center gap-2 text-xs">
-//               {getStatusIcon(status.status)}
-//               <span className="text-gray-400 min-w-[120px]">{label}:</span>
-//               <span
-//                 className={`
-//                 ${
-//                   status.status === "success"
-//                     ? "text-green-400"
-//                     : status.status === "error"
-//                     ? "text-red-400"
-//                     : status.status === "loading"
-//                     ? "text-blue-400"
-//                     : "text-yellow-400"
-//                 }
-//               `}
-//               >
-//                 {status.message}
-//               </span>
-//             </div>
-//           ))}
-//         </div>
-//       </div>
-//     );
-//   };
-
-//   // UI for Add Query Modal/Dropdown
-//   const renderAddQueryModal = () => {
-//     const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
-//     if (!mapping) return null;
-
-//     return (
-//       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-//         <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-6 w-80 max-w-md mx-4">
-//           <div className="mb-4 text-sm font-medium text-gray-200">
-//             Add Query Condition
-//           </div>
-//           <div className="space-y-2 mb-4">
-//             {mapping.additionalQueries.map((q: string) => (
-//               <button
-//                 key={q}
-//                 className="w-full text-left px-3 py-2 rounded hover:bg-gray-800 text-gray-100 text-sm transition-colors"
-//                 onClick={() => {
-//                   if (q === "severity") {
-//                     handleAddQuery("severity", SEVERITY_OPTIONS[0]);
-//                   } else if (q === "timestamp") {
-//                     handleAddQuery("timestamp", new Date().toISOString(), ">=");
-//                   } else {
-//                     handleAddQuery(q, "");
-//                   }
-//                 }}
-//               >
-//                 {q}
-//               </button>
-//             ))}
-//             <button
-//               className="w-full text-left px-3 py-2 rounded hover:bg-gray-800 text-gray-100 text-sm transition-colors"
-//               onClick={() => handleAddQuery("custom", "")}
-//             >
-//               Custom Filter
-//             </button>
-//           </div>
-//           <div className="flex gap-2">
-//             <button
-//               className="flex-1 py-2 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 transition-colors"
-//               onClick={() => setShowAddQuery(false)}
-//             >
-//               Cancel
-//             </button>
-//           </div>
-//         </div>
-//       </div>
-//     );
-//   };
-
-//   // UI for resource label dropdowns
-//   const renderLabelDropdowns = () => {
-//     const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
-//     if (!mapping) return null;
-
-//     return mapping.labels.map((label: string) => {
-//       const isLoading = labelLoading[label];
-//       const error = labelError[label];
-//       const options = labelOptions[label] || [];
-//       const hasOptions = options.length > 0;
-//       const status = apiStatus[label];
-
-//       return (
-//         <div key={label} className="flex items-center gap-2 mb-3">
-//           <span className="text-gray-300 text-sm min-w-[140px] flex items-center gap-1">
-//             resource.labels.{label} ={status && getStatusIcon(status.status)}
-//           </span>
-
-//           {isLoading ? (
-//             <div className="flex items-center gap-2">
-//               <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-//               <span className="text-gray-400 text-sm">Loading...</span>
-//             </div>
-//           ) : hasOptions ? (
-//             <div className="flex-1">
-//               <select
-//                 className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-100 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-//                 value={resourceLabels[label] || ""}
-//                 onChange={(e) => handleLabelChange(label, e.target.value)}
-//               >
-//                 <option value="">Select {label}</option>
-//                 {options.map((option: string) => (
-//                   <option key={option} value={option}>
-//                     {option}
-//                   </option>
-//                 ))}
-//               </select>
-//               {status && status.status !== "success" && (
-//                 <div className="flex items-center gap-1 mt-1 text-xs">
-//                   {getStatusIcon(status.status)}
-//                   <span
-//                     className={`
-//                     ${
-//                       status.status === "error"
-//                         ? "text-red-400"
-//                         : "text-yellow-400"
-//                     }
-//                   `}
-//                   >
-//                     {status.message}
-//                   </span>
-//                 </div>
-//               )}
-//             </div>
-//           ) : (
-//             <div className="flex-1">
-//               <input
-//                 type="text"
-//                 className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-100 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-//                 value={resourceLabels[label] || ""}
-//                 onChange={(e) => handleLabelChange(label, e.target.value)}
-//                 placeholder={`Enter ${label}`}
-//               />
-//               {status && (
-//                 <div className="flex items-center gap-1 mt-1 text-xs">
-//                   {getStatusIcon(status.status)}
-//                   <span
-//                     className={`
-//                     ${
-//                       status.status === "error"
-//                         ? "text-red-400"
-//                         : "text-yellow-400"
-//                     }
-//                   `}
-//                   >
-//                     {status.message}
-//                   </span>
-//                 </div>
-//               )}
-//             </div>
-//           )}
-//         </div>
-//       );
-//     });
-//   };
-
-//   // Early return for safety
-//   if (!isActive || !tab) {
-//     return (
-//       <div className="w-full max-w-4xl mx-auto mt-6 mb-8 p-6 bg-gray-900/90 border border-gray-800 rounded-2xl shadow-xl">
-//         <div className="text-center text-gray-400">
-//           Query Builder not available
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   return (
-//     <div className="w-full max-w-4xl mx-auto mt-6 mb-8 p-6 bg-gray-900/90 border border-gray-800 rounded-2xl shadow-xl">
-//       <div className="mb-6">
-//         <div className="flex items-center justify-between mb-4">
-//           <h2 className="text-lg font-semibold text-blue-300 flex items-center gap-2">
-//             <span>Query Builder</span>
-//             {Object.values(apiStatus).some(
-//               (s) => s.status === "fallback" || s.status === "error"
-//             ) && (
-//               <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded">
-//                 Using Test Data
-//               </span>
-//             )}
-//           </h2>
-//           <button
-//             onClick={() => setShowDebug(!showDebug)}
-//             className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
-//           >
-//             <Bug className="w-3 h-3" />
-//             Debug
-//           </button>
-//         </div>
-
-//         {!accesstoken && (
-//           <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700 rounded text-blue-300 text-sm">
-//             <div className="flex items-center gap-2">
-//               <AlertCircle className="w-4 h-4" />
-//               <span>
-//                 No authentication token. All dropdowns will use test data.
-//               </span>
-//             </div>
-//           </div>
-//         )}
-
-//         {showDebug && (
-//           <>
-//             {renderApiStatus()}
-//             <div className="mb-4 p-3 bg-gray-800 border border-gray-700 rounded">
-//               <div className="text-xs text-gray-300 mb-2">
-//                 Debug Information:
-//               </div>
-//               <div className="max-h-32 overflow-y-auto text-xs text-gray-400 space-y-1">
-//                 {debugInfo.map((info, i) => (
-//                   <div key={i}>{info}</div>
-//                 ))}
-//               </div>
-//             </div>
-//           </>
-//         )}
-
-//         {/* Resource Type Dropdown */}
-//         <div className="flex items-center gap-2 mb-4">
-//           <span className="text-gray-300 text-sm min-w-[140px]">
-//             resource.type =
-//           </span>
-//           <select
-//             className="flex-1 bg-gray-800 border border-blue-600 rounded px-3 py-2 text-blue-300 text-sm font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-//             value={resourceType}
-//             onChange={(e) => handleResourceTypeChange(e.target.value)}
-//           >
-//             {Object.keys(GCP_RESOURCE_MAPPINGS).map((type: string) => (
-//               <option key={type} value={type}>
-//                 {type}
-//               </option>
-//             ))}
-//           </select>
-//         </div>
-
-//         {renderLabelDropdowns()}
-
-//         {additionalQueries.map((q, idx) => (
-//           <div key={idx} className="flex items-center gap-2 mb-2">
-//             <span className="text-gray-300 text-sm min-w-[140px]">
-//               {q.type} =
-//             </span>
-//             {q.type === "severity" ? (
-//               <select
-//                 className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-100 text-sm"
-//                 value={q.value}
-//                 onChange={(e) => {
-//                   const val = e.target.value;
-//                   setAdditionalQueries((prev) =>
-//                     prev.map((item, i) =>
-//                       i === idx ? { ...item, value: val } : item
-//                     )
-//                   );
-//                 }}
-//               >
-//                 {SEVERITY_OPTIONS.map((s) => (
-//                   <option key={s} value={s}>
-//                     {s}
-//                   </option>
-//                 ))}
-//               </select>
-//             ) : (
-//               <input
-//                 type="text"
-//                 className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-100 text-sm"
-//                 value={q.value}
-//                 onChange={(e) => {
-//                   const val = e.target.value;
-//                   setAdditionalQueries((prev) =>
-//                     prev.map((item, i) =>
-//                       i === idx ? { ...item, value: val } : item
-//                     )
-//                   );
-//                 }}
-//                 placeholder={`Enter ${q.type}`}
-//               />
-//             )}
-//             <button
-//               className="p-1 text-gray-400 hover:text-red-400 transition-colors"
-//               onClick={() => handleRemoveQuery(idx)}
-//               title="Remove"
-//             >
-//               <Trash2 className="w-4 h-4" />
-//             </button>
-//           </div>
-//         ))}
-
-//         <div className="flex items-center gap-3 mt-6">
-//           <button
-//             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow transition-all"
-//             onClick={() => setShowAddQuery(true)}
-//             type="button"
-//           >
-//             <Plus className="w-4 h-4" /> Add Condition
-//           </button>
-
-//           <button
-//             className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded shadow transition-all"
-//             onClick={handleClearAll}
-//             type="button"
-//           >
-//             <Trash2 className="w-4 h-4" /> Clear All
-//           </button>
-//         </div>
-//       </div>
-
-//       <div className="mb-4">
-//         <label className="block text-xs font-medium text-gray-400 mb-2">
-//           Generated Query
-//         </label>
-//         <textarea
-//           className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-gray-200 text-xs font-mono resize-none"
-//           value={queryPreview}
-//           readOnly
-//           rows={3}
-//         />
-//       </div>
-
-//       {error && (
-//         <div className="mb-4 text-red-400 text-sm font-medium">{error}</div>
-//       )}
-
-//       <div className="flex gap-3">
-//         <button
-//           className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-//           onClick={handleSubmit}
-//           type="button"
-//           disabled={!queryPreview.trim()}
-//         >
-//           Submit Query
-//         </button>
-//       </div>
-
-//       {/* Add Query Modal */}
-//       {showAddQuery && renderAddQueryModal()}
-//     </div>
-//   );
-// };
-
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { GCP_RESOURCE_MAPPINGS as RAW_MAPPINGS } from "../data/gcpResourceMappings";
-import { GCP_API_ENDPOINTS as RAW_API_ENDPOINTS } from "../data/gcpApiEndpoints";
-import { FALLBACK_DATA as RAW_FALLBACK_DATA } from "../data/fallbackData";
+import {
+  GCP_RESOURCE_MAPPINGS,
+  QUERY_VALUE_MAPPINGS,
+} from "../data/gcpResourceMappings";
 import {
   ChevronDown,
   Plus,
@@ -892,17 +17,7 @@ import {
 } from "lucide-react";
 import type { LogTab } from "../types/gcp";
 import { useAuth } from "../contexts/Auth";
-
-const GCP_RESOURCE_MAPPINGS: Record<
-  string,
-  { labels: string[]; additionalQueries: string[] }
-> = RAW_MAPPINGS;
-
-const GCP_API_ENDPOINTS: Record<string, any> = RAW_API_ENDPOINTS;
-const FALLBACK_DATA: Record<
-  string,
-  Record<string, string[]>
-> = RAW_FALLBACK_DATA;
+import axios from "axios";
 
 const SEVERITY_OPTIONS = ["ERROR", "WARNING", "INFO", "DEBUG"];
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -1072,7 +187,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   onQuerySubmit,
   isActive,
 }) => {
-  const { accesstoken } = useAuth();
+  const { token } = useAuth();
   const [resourceType, setResourceType] = useState<string>(
     tab.filters.resourceType || "cloud_run_revision"
   );
@@ -1117,88 +232,155 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     ]);
   }, []);
 
-  // Initialize with fallback data for immediate dropdown display
-  useEffect(() => {
-    const fallbackForResourceType = FALLBACK_DATA[resourceType];
-    if (fallbackForResourceType) {
-      addDebugMessage(`Initializing with fallback data for ${resourceType}`);
-      setLabelOptions(fallbackForResourceType);
+  // Helper function to determine dependencies based on GCP resource patterns
+  const getDependenciesForLabel = useCallback(
+    (resourceType: string, label: string) => {
+      const dependencyMap: Record<string, Record<string, string | string[]>> = {
+        cloud_run_revision: {
+          revision_name: "service_name",
+        },
+        gae_app: {
+          version: "service",
+          instance_id: ["service", "version"],
+        },
+        bigtable_instance: {
+          cluster: "instance_id",
+        },
+        spanner_instance: {
+          database: "instance_id",
+        },
+        cloud_scheduler_job: {
+          job_id: "location",
+        },
+        cloud_tasks_queue: {
+          queue_id: "location",
+        },
+        // Add more dependencies as needed
+      };
 
-      // Set initial API status for all labels
-      const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
-      if (mapping) {
-        const initialStatus: ApiStatus = {};
-        mapping.labels.forEach((label) => {
-          const hasApiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[
-            label
-          ];
-          initialStatus[label] = hasApiConfig
-            ? { status: "fallback", message: "Using fallback data initially" }
-            : { status: "fallback", message: "No API endpoint available" };
-        });
-        setApiStatus(initialStatus);
-      }
-    }
-  }, [resourceType, addDebugMessage]);
-
-  // Helper: fetch with auth and cache
-  const fetchWithAuth = useCallback(
-    async (key: string, endpoint: string) => {
-      addDebugMessage(`Attempting API call: ${endpoint}`);
-
-      if (!accesstoken) {
-        addDebugMessage("No access token - using fallback data");
-        throw new Error("No access token available");
-      }
-
-      const now = Date.now();
-      const cached = apiCache.get(key);
-      if (cached && now - cached.timestamp < CACHE_TTL) {
-        addDebugMessage(`Using cached response for: ${key}`);
-        return cached.data;
-      }
-
-      try {
-        const response = await fetch(endpoint, {
-          headers: {
-            Authorization: `Bearer ${accesstoken}`,
-            "Content-Type": "application/json",
-          },
-        });
-
-        addDebugMessage(`API response status: ${response.status}`);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          addDebugMessage(`API error: ${response.status} - ${errorText}`);
-          throw new Error(`API call failed: ${response.status} - ${errorText}`);
-        }
-
-        const data = await response.json();
-        addDebugMessage(`API call successful for: ${key}`);
-        apiCache.set(key, { data, timestamp: now });
-        return data;
-      } catch (error: any) {
-        addDebugMessage(`API call failed: ${error.message}`);
-        throw error;
-      }
+      return dependencyMap[resourceType]?.[label] || null;
     },
-    [accesstoken, addDebugMessage]
+    []
   );
 
-  // Helper function to transform API data with logging
-  const transformApiData = useCallback(
-    (resourceType: string, label: string, data: any) => {
-      const apiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[label];
-      if (!apiConfig || !apiConfig.transform) {
-        console.log(`No transform function for ${resourceType}.${label}`);
-        return [];
-      }
+  // Updated fetchOptionsFromBackend function with better error handling
+  const fetchOptionsFromBackend = useCallback(
+    async (
+      resourceType: string,
+      label: string,
+      projectId: string,
+      dependencies: Record<string, string>,
+      token: string
+    ) => {
+      try {
+        console.log(`Fetching options for ${resourceType}.${label}`, {
+          resourceType,
+          label,
+          projectId,
+          dependencies,
+        });
 
-      console.log(`API response for ${resourceType}.${label}:`, data);
-      const result = apiConfig.transform(data);
-      console.log(`Transformed result for ${resourceType}.${label}:`, result);
-      return result;
+        const response = await axios.post(
+          "/api/v1/logs/gcp-resource-options",
+          {
+            resourceType,
+            label,
+            projectId,
+            dependencies,
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            timeout: 30000, // 30 second timeout
+          }
+        );
+
+        console.log(
+          `API Response for ${resourceType}.${label}:`,
+          response.data
+        );
+
+        // Check if response has the expected structure
+        if (!response.data) {
+          throw new Error("No data in response");
+        }
+
+        // Handle different response formats
+        let options = [];
+
+        if (response.data.options && Array.isArray(response.data.options)) {
+          options = response.data.options;
+        } else if (response.data.options) {
+          // If options is not an array, try to convert it
+          console.warn(
+            `Options not an array for ${resourceType}.${label}:`,
+            response.data.options
+          );
+          options = [];
+        } else {
+          // Fallback: check if the response data itself is an array
+          if (Array.isArray(response.data)) {
+            options = response.data;
+          } else {
+            console.error(
+              `Unexpected response format for ${resourceType}.${label}:`,
+              response.data
+            );
+            options = [];
+          }
+        }
+
+        // Validate and clean the options
+        const validOptions = options
+          .filter(
+            (option) => option !== null && option !== undefined && option !== ""
+          )
+          .map((option) => String(option).trim())
+          .filter((option) => option.length > 0);
+
+        console.log(
+          `Processed ${validOptions.length} valid options for ${resourceType}.${label}`
+        );
+
+        if (validOptions.length === 0 && response.data.message) {
+          console.warn(
+            `No options returned for ${resourceType}.${label}: ${response.data.message}`
+          );
+        }
+
+        return validOptions;
+      } catch (err: any) {
+        console.error(
+          `Error fetching options for ${resourceType}.${label}:`,
+          err
+        );
+
+        let errorMessage = "Unknown error occurred";
+
+        if (err.response) {
+          // Server responded with error status
+          if (err.response.data && err.response.data.message) {
+            errorMessage = err.response.data.message;
+          } else {
+            errorMessage = `Server error: ${err.response.status} - ${err.response.statusText}`;
+          }
+        } else if (err.request) {
+          // Request was made but no response received
+          errorMessage =
+            "No response from server - check your network connection";
+        } else if (err.code === "ECONNABORTED") {
+          // Timeout
+          errorMessage =
+            "Request timed out - the API is taking too long to respond";
+        } else {
+          // Something else happened
+          errorMessage = err.message || "Request failed";
+        }
+
+        throw new Error(errorMessage);
+      }
     },
     []
   );
@@ -1211,42 +393,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
       labelDeps: Record<string, string>
     ) => {
       const currentResourceType = resourceTypeRef.current;
-      addDebugMessage(`Fetching options for ${currentResourceType}.${label}`);
-
-      const apiConfig = (GCP_API_ENDPOINTS as any)[currentResourceType]?.[
-        label
-      ];
-      if (!apiConfig) {
-        addDebugMessage(
-          `No API config found for ${currentResourceType}.${label} - using fallback`
-        );
-        const fallbackOptions =
-          FALLBACK_DATA[currentResourceType]?.[label] || [];
-        setLabelOptions((prev) => ({ ...prev, [label]: fallbackOptions }));
-        setApiStatus((prev) => ({
-          ...prev,
-          [label]: { status: "fallback", message: "No API endpoint available" },
-        }));
-        return fallbackOptions;
-      }
-
-      // Check if endpoint is marked as unavailable
-      const endpoint = apiConfig.endpoint(currentProjectId);
-      if (endpoint.startsWith("#")) {
-        addDebugMessage(`API endpoint unavailable for ${label}: ${endpoint}`);
-        const fallbackOptions =
-          FALLBACK_DATA[currentResourceType]?.[label] || [];
-        setLabelOptions((prev) => ({ ...prev, [label]: fallbackOptions }));
-        setApiStatus((prev) => ({
-          ...prev,
-          [label]: {
-            status: "fallback",
-            message: `API not available: ${endpoint.replace("#", "")}`,
-            endpoint,
-          },
-        }));
-        return fallbackOptions;
-      }
+      addDebugMessage(
+        `Fetching options for ${currentResourceType}.${label} from backend`
+      );
 
       setLabelLoading((prev) => ({ ...prev, [label]: true }));
       setLabelError((prev) => ({ ...prev, [label]: "" }));
@@ -1254,67 +403,26 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         ...prev,
         [label]: {
           status: "loading",
-          message: "Fetching from API...",
-          endpoint,
+          message: "Fetching from backend...",
         },
       }));
 
       try {
-        let finalEndpoint: string;
-
-        // Build endpoint with dependencies
-        if (apiConfig.dependsOn) {
-          if (typeof apiConfig.dependsOn === "string") {
-            const depValue = labelDeps[apiConfig.dependsOn];
-            if (!depValue) {
-              addDebugMessage(
-                `Dependency ${apiConfig.dependsOn} not satisfied for ${label}`
-              );
-              setLabelLoading((prev) => ({ ...prev, [label]: false }));
-              setApiStatus((prev) => ({
-                ...prev,
-                [label]: {
-                  status: "fallback",
-                  message: `Waiting for ${apiConfig.dependsOn} selection`,
-                  endpoint,
-                },
-              }));
-              return [];
-            }
-            finalEndpoint = apiConfig.endpoint(currentProjectId, depValue);
-          } else if (Array.isArray(apiConfig.dependsOn)) {
-            const depValues = apiConfig.dependsOn.map(
-              (dep: string) => labelDeps[dep]
-            );
-            if (depValues.some((val: any) => !val)) {
-              addDebugMessage(`Some dependencies not satisfied for ${label}`);
-              setLabelLoading((prev) => ({ ...prev, [label]: false }));
-              setApiStatus((prev) => ({
-                ...prev,
-                [label]: {
-                  status: "fallback",
-                  message: `Waiting for dependencies: ${apiConfig.dependsOn.join(
-                    ", "
-                  )}`,
-                  endpoint,
-                },
-              }));
-              return [];
-            }
-            finalEndpoint = apiConfig.endpoint(currentProjectId, ...depValues);
-          } else {
-            finalEndpoint = apiConfig.endpoint(currentProjectId);
-          }
-        } else {
-          finalEndpoint = apiConfig.endpoint(currentProjectId);
+        if (!token) {
+          throw new Error("No access token available");
         }
 
-        const cacheKey = `${currentResourceType}:${label}:${finalEndpoint}`;
-        const data = await fetchWithAuth(cacheKey, finalEndpoint);
-        const options = transformApiData(currentResourceType, label, data);
+        const options = await fetchOptionsFromBackend(
+          currentResourceType,
+          label,
+          currentProjectId,
+          labelDeps,
+          token
+        );
 
-        addDebugMessage(
-          `Successfully fetched ${options.length} options for ${label}`
+        console.log(
+          `Successfully fetched ${options.length} options for ${label}:`,
+          options.slice(0, 5)
         );
 
         setLabelOptions((prev) => ({ ...prev, [label]: options }));
@@ -1323,40 +431,35 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           ...prev,
           [label]: {
             status: "success",
-            message: `Loaded ${options.length} items from API`,
-            endpoint: finalEndpoint,
+            message: `Loaded ${options.length} items from backend`,
           },
         }));
+
+        addDebugMessage(
+          `Successfully loaded ${options.length} options for ${label}`
+        );
         return options;
       } catch (err: any) {
-        addDebugMessage(`Error fetching options for ${label}: ${err.message}`);
+        const errorMessage = err.message || "Unknown error occurred";
 
-        // Fall back to static data on API failure
-        const fallbackOptions =
-          FALLBACK_DATA[currentResourceType]?.[label] || [];
-        addDebugMessage(
-          `Using fallback data for ${label}: ${fallbackOptions.length} options`
-        );
+        addDebugMessage(`Error fetching options for ${label}: ${errorMessage}`);
+        console.error(`fetchDropdownOptions error for ${label}:`, err);
 
-        setLabelOptions((prev) => ({ ...prev, [label]: fallbackOptions }));
+        setLabelOptions((prev) => ({ ...prev, [label]: [] }));
         setLabelLoading((prev) => ({ ...prev, [label]: false }));
-        setLabelError((prev) => ({
-          ...prev,
-          [label]: `API failed: ${err.message}`,
-        }));
+        setLabelError((prev) => ({ ...prev, [label]: errorMessage }));
         setApiStatus((prev) => ({
           ...prev,
           [label]: {
             status: "error",
-            message: `API failed: ${err.message}. Using fallback data.`,
-            endpoint,
+            message: `Backend failed: ${errorMessage}`,
           },
         }));
 
-        return fallbackOptions;
+        return [];
       }
     },
-    [fetchWithAuth, transformApiData, addDebugMessage]
+    [token, addDebugMessage, fetchOptionsFromBackend]
   );
 
   // Handle resource type change - memoized to prevent infinite loops
@@ -1374,9 +477,11 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
       // Update tab without causing re-renders
       const updatedTab = {
         ...tab,
-        title: newResourceType
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (l) => l.toUpperCase()),
+        title:
+          GCP_RESOURCE_MAPPINGS[newResourceType]?.id ||
+          newResourceType
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (l) => l.toUpperCase()),
         filters: { ...tab.filters, resourceType: newResourceType },
       };
 
@@ -1406,17 +511,25 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
     // Fetch options for labels that don't have dependencies first
     mapping.labels.forEach((label) => {
-      const apiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[label];
-      if (!apiConfig || !apiConfig.dependsOn) {
+      const dependencies = getDependenciesForLabel(resourceType, label);
+      if (!dependencies) {
         addDebugMessage(`Fetching independent label: ${label}`);
         fetchDropdownOptions(label, projectId, {});
       } else {
         addDebugMessage(
-          `Skipping dependent label: ${label} (depends on: ${apiConfig.dependsOn})`
+          `Skipping dependent label: ${label} (depends on: ${
+            Array.isArray(dependencies) ? dependencies.join(", ") : dependencies
+          })`
         );
       }
     });
-  }, [resourceType, projectId, fetchDropdownOptions, addDebugMessage]);
+  }, [
+    resourceType,
+    projectId,
+    fetchDropdownOptions,
+    addDebugMessage,
+    getDependenciesForLabel,
+  ]);
 
   // Handle dependencies: refetch dependent dropdowns when a dependency changes
   useEffect(() => {
@@ -1430,15 +543,15 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     );
 
     mapping.labels.forEach((label) => {
-      const apiConfig = (GCP_API_ENDPOINTS as any)[resourceType]?.[label];
-      if (apiConfig && apiConfig.dependsOn) {
-        if (typeof apiConfig.dependsOn === "string") {
-          if (dependencyValues[apiConfig.dependsOn]) {
+      const dependencies = getDependenciesForLabel(resourceType, label);
+      if (dependencies) {
+        if (typeof dependencies === "string") {
+          if (dependencyValues[dependencies]) {
             addDebugMessage(`Fetching dependent label: ${label}`);
             fetchDropdownOptions(label, projectId, dependencyValues);
           }
-        } else if (Array.isArray(apiConfig.dependsOn)) {
-          const allDepsSet = apiConfig.dependsOn.every(
+        } else if (Array.isArray(dependencies)) {
+          const allDepsSet = dependencies.every(
             (dep: string) => dependencyValues[dep]
           );
           if (allDepsSet) {
@@ -1454,6 +567,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     projectId,
     fetchDropdownOptions,
     addDebugMessage,
+    getDependenciesForLabel,
   ]);
 
   // Build query preview
@@ -1474,6 +588,12 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         query += ` AND timestamp${q.operator || ">="}"${q.value}"`;
       } else if (q.type === "custom" && q.value) {
         query += ` AND (${q.value})`;
+      } else if (q.type === "jsonPayload" && q.value) {
+        query += ` AND jsonPayload.${q.value}`;
+      } else if (q.type === "textPayload" && q.value) {
+        query += ` AND textPayload:"${q.value}"`;
+      } else if (q.type === "labels" && q.value) {
+        query += ` AND labels.${q.value}`;
       } else if (q.type && q.value) {
         query += ` AND ${q.type}="${q.value}"`;
       }
@@ -1540,6 +660,51 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     }
   };
 
+  // Debug functions
+  const testApiConnectivity = async () => {
+    if (!token || !projectId) {
+      console.error("Missing token or projectId for testing");
+      return;
+    }
+
+    const testCases = [
+      {
+        name: "Cloud Run Services",
+        resourceType: "cloud_run_revision",
+        label: "service_name",
+      },
+      {
+        name: "GCS Buckets",
+        resourceType: "gcs_bucket",
+        label: "bucket_name",
+      },
+      {
+        name: "BigQuery Datasets",
+        resourceType: "bigquery_dataset",
+        label: "dataset_id",
+      },
+    ];
+
+    for (const testCase of testCases) {
+      try {
+        console.log(`Testing ${testCase.name}...`);
+        const options = await fetchOptionsFromBackend(
+          testCase.resourceType,
+          testCase.label,
+          projectId,
+          {},
+          token
+        );
+        console.log(
+          `✅ ${testCase.name}: ${options.length} options found`,
+          options.slice(0, 3)
+        );
+      } catch (error: any) {
+        console.error(`❌ ${testCase.name} failed:`, error.message);
+      }
+    }
+  };
+
   // UI for API status display
   const renderApiStatus = () => {
     const statusEntries = Object.entries(apiStatus);
@@ -1579,6 +744,69 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     );
   };
 
+  // Debug controls UI
+  const renderDebugControls = () => (
+    <div className="mb-6 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-medium text-slate-300">
+          Debug Controls:
+        </div>
+        <button
+          onClick={testApiConnectivity}
+          className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
+        >
+          Test APIs
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 text-xs">
+        <div>
+          <div className="text-slate-400">Resource Type:</div>
+          <div className="text-slate-200 font-mono">{resourceType}</div>
+        </div>
+        <div>
+          <div className="text-slate-400">Project ID:</div>
+          <div className="text-slate-200 font-mono">{projectId}</div>
+        </div>
+        <div>
+          <div className="text-slate-400">Available Labels:</div>
+          <div className="text-slate-200 font-mono">
+            {GCP_RESOURCE_MAPPINGS[resourceType]?.labels?.join(", ") || "None"}
+          </div>
+        </div>
+        <div>
+          <div className="text-slate-400">Token Available:</div>
+          <div className="text-slate-200 font-mono">{token ? "Yes" : "No"}</div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <div className="text-slate-400 text-xs mb-2">
+          Current Label Options Count:
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          {GCP_RESOURCE_MAPPINGS[resourceType]?.labels?.map((label) => (
+            <div key={label} className="bg-slate-700/30 p-2 rounded">
+              <div className="text-slate-300 font-medium">{label}</div>
+              <div className="text-slate-400">
+                {labelOptions[label]?.length || 0} options
+              </div>
+              <div className="text-xs">
+                {labelLoading[label]
+                  ? "Loading..."
+                  : labelError[label]
+                  ? "Error"
+                  : labelOptions[label]?.length > 0
+                  ? "Ready"
+                  : "Empty"}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   // UI for Add Query Modal/Dropdown
   const renderAddQueryModal = () => {
     const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
@@ -1597,21 +825,44 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           </div>
 
           <div className="space-y-2 mb-6">
-            {mapping.additionalQueries.map((q: string) => (
+            {mapping.additionalQueries.map((queryType: string) => (
               <button
-                key={q}
+                key={queryType}
                 className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-700/50 text-slate-200 text-sm transition-all duration-200 ease-in-out border border-transparent hover:border-slate-600/50"
                 onClick={() => {
-                  if (q === "severity") {
+                  if (queryType === "severity") {
                     handleAddQuery("severity", SEVERITY_OPTIONS[0]);
-                  } else if (q === "timestamp") {
+                  } else if (queryType === "timestamp") {
                     handleAddQuery("timestamp", new Date().toISOString(), ">=");
+                  } else if (queryType === "jsonPayload") {
+                    handleAddQuery("jsonPayload", "");
+                  } else if (queryType === "textPayload") {
+                    handleAddQuery("textPayload", "");
+                  } else if (queryType === "labels") {
+                    handleAddQuery("labels", "");
                   } else {
-                    handleAddQuery(q, "");
+                    handleAddQuery(queryType, "");
                   }
                 }}
               >
-                <span className="font-medium">{q}</span>
+                <span className="font-medium capitalize">
+                  {queryType.replace(/([A-Z])/g, " $1")}
+                </span>
+                {queryType === "jsonPayload" && (
+                  <span className="block text-xs text-slate-400 mt-1">
+                    Filter by JSON payload fields
+                  </span>
+                )}
+                {queryType === "textPayload" && (
+                  <span className="block text-xs text-slate-400 mt-1">
+                    Filter by text payload content
+                  </span>
+                )}
+                {queryType === "labels" && (
+                  <span className="block text-xs text-slate-400 mt-1">
+                    Filter by resource labels
+                  </span>
+                )}
               </button>
             ))}
             <button
@@ -1728,7 +979,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           </button>
         </div>
 
-        {!accesstoken && (
+        {!token && (
           <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl backdrop-blur-sm">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />
@@ -1747,6 +998,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         {showDebug && (
           <>
             {renderApiStatus()}
+            {renderDebugControls()}
             <div className="mb-6 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm">
               <div className="text-xs font-medium text-slate-300 mb-3">
                 Debug Information:
