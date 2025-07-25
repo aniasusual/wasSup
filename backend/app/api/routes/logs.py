@@ -210,7 +210,7 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
             )
 
             filter_str = query.get("filter", "")
-            page_size = min(query.get("pageSize", 100), 100)
+            page_size = min(query.get("pageSize", 1000), 1000)
             page_token = query.get("pageToken", None)
             order_by = query.get("orderBy", "timestamp desc")
 

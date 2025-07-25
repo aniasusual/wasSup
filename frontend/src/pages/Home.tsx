@@ -46,6 +46,8 @@ export const Home = () => {
     setPendingSearch({ searchQuery, startDate, endDate });
   };
 
+  const [logCount, setLogCount] = useState(100); // Add log count state
+
   useEffect(() => {
     fetchProjects();
   }, [token]);
@@ -206,6 +208,7 @@ export const Home = () => {
           customStartTime: startDate, // Apply global start time
           customEndTime: endDate, // Apply global end time
         },
+        pageSize: logCount, // Pass log count
       });
       setTabLogs((prev) => ({ ...prev, [tab.id]: res.logs }));
     } catch (e) {
@@ -222,7 +225,15 @@ export const Home = () => {
       fetchLogsForTab(activeTab);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTabId, selectedProject, tabs, searchQuery, startDate, endDate]);
+  }, [
+    activeTabId,
+    selectedProject,
+    tabs,
+    searchQuery,
+    startDate,
+    endDate,
+    logCount,
+  ]);
 
   return (
     <div className="bg-gray-950 min-h-screen flex flex-col">
@@ -389,6 +400,20 @@ export const Home = () => {
                     <h3 className="text-base sm:text-lg xl:text-xl font-semibold text-white">
                       Log Entries
                     </h3>
+                    {/* Log count dropdown */}
+                    <select
+                      className="ml-2 px-2 py-1 rounded bg-gray-800 text-blue-400 border border-blue-800 text-xs xl:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={logCount}
+                      onChange={(e) => setLogCount(Number(e.target.value))}
+                      style={{ minWidth: 60 }}
+                      title="Select number of logs to display"
+                    >
+                      {[50, 100, 200, 500, 1000].map((count) => (
+                        <option key={count} value={count}>
+                          {count}
+                        </option>
+                      ))}
+                    </select>
                     {activeTabId &&
                       tabLogs[activeTabId] &&
                       tabLogs[activeTabId].length > 0 && (

@@ -161,7 +161,7 @@ export const useLogService = () => {
             projectId: params.projectId,
             filter: filterString,
             orderBy: "timestamp desc",
-            pageSize: params.pageSize || 100,
+            pageSize: params.pageSize || 1000,
         };
         if (params.pageToken) {
             backendRequestBody.pageToken = params.pageToken;
