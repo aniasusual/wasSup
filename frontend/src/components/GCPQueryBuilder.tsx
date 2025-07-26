@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   GCP_RESOURCE_MAPPINGS,
-  QUERY_VALUE_MAPPINGS,
+  // QUERY_VALUE_MAPPINGS,
 } from "../data/gcpResourceMappings";
 import {
   ChevronDown,
@@ -14,14 +14,16 @@ import {
   XCircle,
   Search,
   X,
+  FileText,
+  Copy,
 } from "lucide-react";
 import type { LogTab } from "../types/gcp";
 import { useAuth } from "../contexts/Auth";
 import axios from "axios";
 
 const SEVERITY_OPTIONS = ["ERROR", "WARNING", "INFO", "DEBUG"];
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const apiCache = new Map<string, { data: any; timestamp: number }>();
+// const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// const apiCache = new Map<string, { data: any; timestamp: number }>();
 
 interface GCPQueryBuilderProps {
   tab: LogTab;
@@ -38,6 +40,122 @@ interface ApiStatus {
     endpoint?: string;
   };
 }
+
+// Query parsing interface
+interface ParsedQuery {
+  resourceType: string;
+  resourceLabels: Record<string, string>;
+  additionalQueries: Array<{
+    type: string;
+    value: string;
+    operator?: string;
+  }>;
+}
+
+// Function to parse GCP log query
+const parseGCPQuery = (query: string): ParsedQuery | null => {
+  try {
+    const lines = query.split("\n").filter((line) => line.trim());
+    const result: ParsedQuery = {
+      resourceType: "",
+      resourceLabels: {},
+      additionalQueries: [],
+    };
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+
+      // Parse resource.type
+      if (trimmedLine.startsWith("resource.type=")) {
+        const match = trimmedLine.match(/resource\.type="([^"]+)"/);
+        if (match) {
+          result.resourceType = match[1];
+        }
+      }
+      // Parse resource.labels
+      else if (trimmedLine.startsWith("resource.labels.")) {
+        const match = trimmedLine.match(/resource\.labels\.([^=]+)="([^"]+)"/);
+        if (match) {
+          result.resourceLabels[match[1]] = match[2];
+        }
+      }
+      // Parse severity
+      else if (trimmedLine.startsWith("severity")) {
+        // Handle both quoted and unquoted values
+        const quotedMatch = trimmedLine.match(/severity(>=?|<=?|=)"([^"]+)"/);
+        const unquotedMatch = trimmedLine.match(/severity(>=?|<=?|=)([^\s]+)/);
+        const match = quotedMatch || unquotedMatch;
+        if (match) {
+          result.additionalQueries.push({
+            type: "severity",
+            value: match[2],
+            operator: match[1],
+          });
+        }
+      }
+      // Parse timestamp
+      else if (trimmedLine.startsWith("timestamp")) {
+        // Handle both quoted and unquoted values
+        const quotedMatch = trimmedLine.match(/timestamp(>=?|<=?|=)"([^"]+)"/);
+        const unquotedMatch = trimmedLine.match(/timestamp(>=?|<=?|=)([^\s]+)/);
+        const match = quotedMatch || unquotedMatch;
+        if (match) {
+          result.additionalQueries.push({
+            type: "timestamp",
+            value: match[2],
+            operator: match[1],
+          });
+        }
+      }
+      // Parse jsonPayload
+      else if (trimmedLine.startsWith("jsonPayload.")) {
+        const match = trimmedLine.match(/jsonPayload\.([^=]+)="([^"]+)"/);
+        if (match) {
+          result.additionalQueries.push({
+            type: "jsonPayload",
+            value: `${match[1]}="${match[2]}"`,
+          });
+        }
+      }
+      // Parse textPayload
+      else if (trimmedLine.startsWith("textPayload:")) {
+        const match = trimmedLine.match(/textPayload:"([^"]+)"/);
+        if (match) {
+          result.additionalQueries.push({
+            type: "textPayload",
+            value: match[1],
+          });
+        }
+      }
+      // Parse labels
+      else if (trimmedLine.startsWith("labels.")) {
+        const match = trimmedLine.match(/labels\.([^=]+)="([^"]+)"/);
+        if (match) {
+          result.additionalQueries.push({
+            type: "labels",
+            value: `${match[1]}="${match[2]}"`,
+          });
+        }
+      }
+      // Parse custom conditions (anything else)
+      else if (
+        trimmedLine.includes("=") ||
+        trimmedLine.includes(">") ||
+        trimmedLine.includes("<")
+      ) {
+        result.additionalQueries.push({
+          type: "custom",
+          value: trimmedLine,
+        });
+      }
+    }
+
+    return result.resourceType ? result : null;
+  } catch (error) {
+    console.error("Error parsing query:", error);
+    return null;
+  }
+};
 
 // Custom SearchableSelect Component
 const SearchableSelect: React.FC<{
@@ -209,6 +327,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus>({});
+  const [showManualQuery, setShowManualQuery] = useState(false);
+  const [manualQuery, setManualQuery] = useState("");
+  const [parseError, setParseError] = useState<string>("");
 
   // Use refs to track the latest values to prevent stale closures
   const resourceTypeRef = useRef(resourceType);
@@ -335,10 +456,11 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         // Validate and clean the options
         const validOptions = options
           .filter(
-            (option) => option !== null && option !== undefined && option !== ""
+            (option: any) =>
+              option !== null && option !== undefined && option !== ""
           )
-          .map((option) => String(option).trim())
-          .filter((option) => option.length > 0);
+          .map((option: any) => String(option).trim())
+          .filter((option: any) => option.length > 0);
 
         console.log(
           `Processed ${validOptions.length} valid options for ${resourceType}.${label}`
@@ -478,7 +600,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
       const updatedTab = {
         ...tab,
         title:
-          GCP_RESOURCE_MAPPINGS[newResourceType]?.id ||
+          GCP_RESOURCE_MAPPINGS[
+            newResourceType as keyof typeof GCP_RESOURCE_MAPPINGS
+          ]?.id ||
           newResourceType
             .replace(/_/g, " ")
             .replace(/\b\w/g, (l) => l.toUpperCase()),
@@ -495,7 +619,8 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
   // Fetch options for all labels when component mounts or resourceType changes
   useEffect(() => {
-    const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
+    const mapping =
+      GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
     if (!mapping || !projectId) {
       addDebugMessage(
         `Skipping label fetch - mapping: ${!!mapping}, projectId: ${!!projectId}`
@@ -510,7 +635,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     );
 
     // Fetch options for labels that don't have dependencies first
-    mapping.labels.forEach((label) => {
+    mapping.labels.forEach((label: any) => {
       const dependencies = getDependenciesForLabel(resourceType, label);
       if (!dependencies) {
         addDebugMessage(`Fetching independent label: ${label}`);
@@ -535,14 +660,15 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   useEffect(() => {
     if (Object.keys(dependencyValues).length === 0) return;
 
-    const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
+    const mapping =
+      GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
     if (!mapping || !projectId) return;
 
     addDebugMessage(
       `Dependencies changed: ${JSON.stringify(dependencyValues)}`
     );
 
-    mapping.labels.forEach((label) => {
+    mapping.labels.forEach((label: any) => {
       const dependencies = getDependenciesForLabel(resourceType, label);
       if (dependencies) {
         if (typeof dependencies === "string") {
@@ -573,7 +699,8 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   // Build query preview
   useEffect(() => {
     let query = `resource.type="${resourceType}"`;
-    const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
+    const mapping =
+      GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
     if (mapping) {
       mapping.labels.forEach((label: string) => {
         if (resourceLabels[label]) {
@@ -643,6 +770,68 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     setError("");
     setDependencyValues({});
   }, []);
+
+  // Handle manual query parsing
+  const handleParseManualQuery = useCallback(() => {
+    if (!manualQuery.trim()) {
+      setParseError("Please enter a query to parse");
+      return;
+    }
+
+    setParseError("");
+    const parsed = parseGCPQuery(manualQuery);
+
+    if (!parsed) {
+      setParseError("Failed to parse query. Please check the format.");
+      return;
+    }
+
+    // Check if resource type is supported
+    if (
+      !GCP_RESOURCE_MAPPINGS[
+        parsed.resourceType as keyof typeof GCP_RESOURCE_MAPPINGS
+      ]
+    ) {
+      setParseError(`Unsupported resource type: ${parsed.resourceType}`);
+      return;
+    }
+
+    // Apply parsed query to the interface
+    setResourceType(parsed.resourceType);
+    setResourceLabels(parsed.resourceLabels);
+    setAdditionalQueries(parsed.additionalQueries);
+    setDependencyValues(parsed.resourceLabels);
+
+    // Update tab
+    const updatedTab = {
+      ...tab,
+      title:
+        GCP_RESOURCE_MAPPINGS[
+          parsed.resourceType as keyof typeof GCP_RESOURCE_MAPPINGS
+        ]?.id ||
+        parsed.resourceType
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (l) => l.toUpperCase()),
+      filters: { ...tab.filters, resourceType: parsed.resourceType },
+    };
+    onUpdateTab(updatedTab);
+
+    // Close modal and clear input
+    setShowManualQuery(false);
+    setManualQuery("");
+    addDebugMessage(`Successfully parsed query for ${parsed.resourceType}`);
+  }, [manualQuery, tab, onUpdateTab, addDebugMessage]);
+
+  // Copy query to clipboard
+  const handleCopyQuery = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(queryPreview);
+      addDebugMessage("Query copied to clipboard");
+    } catch (error) {
+      console.error("Failed to copy query:", error);
+      addDebugMessage("Failed to copy query to clipboard");
+    }
+  }, [queryPreview, addDebugMessage]);
 
   // Get status icon for API calls
   const getStatusIcon = (status: string) => {
@@ -771,7 +960,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         <div>
           <div className="text-slate-400">Available Labels:</div>
           <div className="text-slate-200 font-mono">
-            {GCP_RESOURCE_MAPPINGS[resourceType]?.labels?.join(", ") || "None"}
+            {GCP_RESOURCE_MAPPINGS[
+              resourceType as keyof typeof GCP_RESOURCE_MAPPINGS
+            ]?.labels?.join(", ") || "None"}
           </div>
         </div>
         <div>
@@ -785,7 +976,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           Current Label Options Count:
         </div>
         <div className="grid grid-cols-3 gap-2 text-xs">
-          {GCP_RESOURCE_MAPPINGS[resourceType]?.labels?.map((label) => (
+          {GCP_RESOURCE_MAPPINGS[
+            resourceType as keyof typeof GCP_RESOURCE_MAPPINGS
+          ]?.labels?.map((label: string) => (
             <div key={label} className="bg-slate-700/30 p-2 rounded">
               <div className="text-slate-300 font-medium">{label}</div>
               <div className="text-slate-400">
@@ -807,9 +1000,81 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     </div>
   );
 
+  // UI for Manual Query Input Modal
+  const renderManualQueryModal = () => {
+    if (!showManualQuery) return null;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="bg-slate-900/95 backdrop-blur-lg border border-slate-700/50 rounded-2xl shadow-2xl p-6 w-[600px] max-w-[90vw] mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-slate-200 mb-2">
+              Paste GCP Log Query
+            </h3>
+            <p className="text-sm text-slate-400">
+              Paste your GCP log query here to automatically populate the query
+              builder
+            </p>
+          </div>
+
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-300 mb-3">
+              Query Input
+            </label>
+            <textarea
+              className="w-full h-48 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-slate-200 text-sm font-mono resize-none backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
+              value={manualQuery}
+              onChange={(e) => setManualQuery(e.target.value)}
+              placeholder={`Paste your GCP log query here, for example:
+
+resource.type="k8s_container"
+resource.labels.project_id="emergent-default"
+resource.labels.location="us-central1"
+resource.labels.cluster_name="env-worker-cluster"
+resource.labels.namespace_name="emergent-agents-env"
+resource.labels.pod_name="agent-env-9f2d59a6-1dc6-45c7-94c5-bb7bd8e5829c"
+severity>=DEFAULT`}
+            />
+          </div>
+
+          {parseError && (
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <XCircle className="w-4 h-4 text-red-400" />
+                <span className="text-red-300 text-sm font-medium">
+                  {parseError}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all duration-200 ease-in-out font-medium"
+              onClick={handleParseManualQuery}
+            >
+              Parse & Apply Query
+            </button>
+            <button
+              className="flex-1 py-3 bg-slate-700/50 hover:bg-slate-700 text-slate-200 rounded-xl transition-all duration-200 ease-in-out font-medium"
+              onClick={() => {
+                setShowManualQuery(false);
+                setManualQuery("");
+                setParseError("");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // UI for Add Query Modal/Dropdown
   const renderAddQueryModal = () => {
-    const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
+    const mapping =
+      GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
     if (!mapping) return null;
 
     return (
@@ -891,7 +1156,8 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
   // UI for resource label dropdowns
   const renderLabelDropdowns = () => {
-    const mapping = GCP_RESOURCE_MAPPINGS[resourceType];
+    const mapping =
+      GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
     if (!mapping) return null;
 
     return mapping.labels.map((label: string) => {
@@ -1112,6 +1378,14 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         </button>
 
         <button
+          className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
+          onClick={() => setShowManualQuery(true)}
+          type="button"
+        >
+          <FileText className="w-4 h-4" /> Paste Query
+        </button>
+
+        <button
           className="inline-flex items-center gap-2 px-6 py-3 bg-slate-700/50 hover:bg-slate-700 text-slate-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
           onClick={handleClearAll}
           type="button"
@@ -1122,9 +1396,19 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
       {/* Query Preview */}
       <div className="mb-8">
-        <label className="block text-sm font-medium text-slate-300 mb-3">
-          Generated Query
-        </label>
+        <div className="flex items-center justify-between mb-3">
+          <label className="block text-sm font-medium text-slate-300">
+            Generated Query
+          </label>
+          <button
+            onClick={handleCopyQuery}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded-lg transition-all duration-200 ease-in-out border border-slate-600/50"
+            title="Copy query to clipboard"
+          >
+            <Copy className="w-3 h-3" />
+            Copy
+          </button>
+        </div>
         <div className="relative">
           <textarea
             className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 text-slate-200 text-sm font-mono resize-none backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
@@ -1159,6 +1443,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
       {/* Add Query Modal */}
       {showAddQuery && renderAddQueryModal()}
+
+      {/* Manual Query Modal */}
+      {renderManualQueryModal()}
     </div>
   );
 };

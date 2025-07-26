@@ -17,8 +17,10 @@ const getServiceIcon = (serviceId: string) => {
 };
 
 const getTabTitle = (tab: LogTab) => {
+  // Use the resourceType from filters if available, otherwise fall back to serviceId
+  const resourceType = tab.filters?.resourceType || tab.serviceId;
   const svc =
-    GCP_RESOURCE_MAPPINGS[tab.serviceId as keyof typeof GCP_RESOURCE_MAPPINGS];
+    GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
   return svc ? svc.id : tab.title;
 };
 

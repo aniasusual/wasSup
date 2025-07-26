@@ -12,6 +12,7 @@ interface DateTimeSearchBarProps {
   setEndDate: (d: string) => void;
   isLoading?: boolean;
   onSearch: () => void;
+  onTimeRangeChange?: (startDate: string, endDate: string) => void;
 }
 
 const PRESETS = [
@@ -33,6 +34,7 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
   setEndDate,
   isLoading = false,
   onSearch,
+  onTimeRangeChange,
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(null);
@@ -76,7 +78,7 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
     return isNaN(ts) ? Date.now() : ts;
   }, [endDate]);
 
-  // Handler for slider change
+  // Handler for slider change (during dragging - don't trigger search)
   const handleSliderChange = useCallback(
     (values: number | number[]) => {
       if (Array.isArray(values) && values.length === 2) {
@@ -89,17 +91,55 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
     [setStartDate, setEndDate, toDateTimeLocal]
   );
 
+  // Handler for slider release (trigger search only when user finishes dragging)
+  const handleSliderAfterChange = useCallback(
+    (values: number | number[]) => {
+      if (Array.isArray(values) && values.length === 2) {
+        const [newStartTs, newEndTs] = values;
+        const newStartDate = toDateTimeLocal(newStartTs);
+        const newEndDate = toDateTimeLocal(newEndTs);
+
+        // Only trigger search if the time range actually changed
+        if (newStartDate !== startDate || newEndDate !== endDate) {
+          setStartDate(newStartDate);
+          setEndDate(newEndDate);
+          setActivePreset(null);
+
+          // Trigger search only when user finishes dragging
+          if (onTimeRangeChange) {
+            onTimeRangeChange(newStartDate, newEndDate);
+          }
+        }
+      }
+    },
+    [
+      setStartDate,
+      setEndDate,
+      toDateTimeLocal,
+      startDate,
+      endDate,
+      onTimeRangeChange,
+    ]
+  );
+
   // Handler for preset buttons
   const handlePreset = useCallback(
     (minutes: number, label: string) => {
       const now = Date.now();
       const fromTs = now - minutes * MS_PER_MIN;
+      const newStartDate = toDateTimeLocal(fromTs);
+      const newEndDate = toDateTimeLocal(now);
 
-      setStartDate(toDateTimeLocal(fromTs));
-      setEndDate(toDateTimeLocal(now));
+      setStartDate(newStartDate);
+      setEndDate(newEndDate);
       setActivePreset(label);
+
+      // Trigger API call when preset is selected
+      if (onTimeRangeChange) {
+        onTimeRangeChange(newStartDate, newEndDate);
+      }
     },
-    [setStartDate, setEndDate, toDateTimeLocal]
+    [setStartDate, setEndDate, toDateTimeLocal, onTimeRangeChange]
   );
 
   // Handle manual datetime input changes
@@ -119,6 +159,25 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
     [setEndDate]
   );
 
+  // Handle manual datetime input blur (when user finishes editing)
+  const handleStartDateBlur = useCallback(
+    (e: React.FocusEvent<HTMLInputElement>) => {
+      if (onTimeRangeChange && e.target.value) {
+        onTimeRangeChange(e.target.value, endDate);
+      }
+    },
+    [onTimeRangeChange, endDate]
+  );
+
+  const handleEndDateBlur = useCallback(
+    (e: React.FocusEvent<HTMLInputElement>) => {
+      if (onTimeRangeChange && e.target.value) {
+        onTimeRangeChange(startDate, e.target.value);
+      }
+    },
+    [onTimeRangeChange, startDate]
+  );
+
   const clearSearch = useCallback(() => {
     setSearchQuery("");
   }, [setSearchQuery]);
@@ -130,6 +189,21 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
       }
     },
     [onSearch]
+  );
+
+  // Handle Enter key press on datetime inputs
+  const handleDateTimeKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        const target = e.target as HTMLInputElement;
+        if (target.name === "startDate" && onTimeRangeChange) {
+          onTimeRangeChange(target.value, endDate);
+        } else if (target.name === "endDate" && onTimeRangeChange) {
+          onTimeRangeChange(startDate, target.value);
+        }
+      }
+    },
+    [onTimeRangeChange, startDate, endDate]
   );
 
   return (
@@ -230,6 +304,7 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
                   max={maxTs}
                   value={[Math.max(minTs, startTs), Math.min(maxTs, endTs)]}
                   onChange={handleSliderChange}
+                  onAfterChange={handleSliderAfterChange}
                   allowCross={false}
                   step={60 * 1000} // 1 minute steps
                   trackStyle={[
@@ -284,8 +359,11 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
                 </label>
                 <input
                   type="datetime-local"
+                  name="startDate"
                   value={startDate}
                   onChange={handleStartDateChange}
+                  onBlur={handleStartDateBlur}
+                  onKeyDown={handleDateTimeKeyDown}
                   className="w-full bg-gray-800/80 border border-gray-600/50 rounded-lg text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm"
                 />
               </div>
@@ -297,8 +375,11 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
                 </label>
                 <input
                   type="datetime-local"
+                  name="endDate"
                   value={endDate}
                   onChange={handleEndDateChange}
+                  onBlur={handleEndDateBlur}
+                  onKeyDown={handleDateTimeKeyDown}
                   className="w-full bg-gray-800/80 border border-gray-600/50 rounded-lg text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm"
                 />
               </div>

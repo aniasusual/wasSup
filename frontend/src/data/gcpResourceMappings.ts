@@ -567,17 +567,17 @@ export function getAllResourceTypes(): string[] {
 
 // Helper function to get labels for a resource type
 export function getLabelsForResourceType(resourceType: string): string[] {
-    return GCP_RESOURCE_MAPPINGS[resourceType]?.labels || [];
+    return GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS]?.labels || [];
 }
 
 // Helper function to get additional queries for a resource type
 export function getAdditionalQueriesForResourceType(resourceType: string): string[] {
-    return GCP_RESOURCE_MAPPINGS[resourceType]?.additionalQueries || [];
+    return GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS]?.additionalQueries || [];
 }
 
 // Helper function to get display name for resource type
 export function getDisplayNameForResourceType(resourceType: string): string {
-    return GCP_RESOURCE_MAPPINGS[resourceType]?.id || resourceType
+    return GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS]?.id || resourceType
         .replace(/_/g, " ")
         .replace(/\b\w/g, (l) => l.toUpperCase());
 }
