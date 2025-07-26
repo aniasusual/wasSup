@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Search, RefreshCw, Download, Settings, X } from "lucide-react";
 import { ProviderSelector } from "../components/ProviderSelector";
 import { LogTabs } from "../components/LogTabs";
@@ -9,9 +9,8 @@ import { useAuth } from "../contexts/Auth";
 import { useLogService } from "../services/logService";
 import type { GCPService, LogTab } from "../types/gcp";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
-import { getServiceById } from "../data/gcpResourceMappings";
+
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
-import type { LogQueryParams } from "../services/logService";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -45,6 +44,18 @@ export const Home = () => {
   const handleSearch = () => {
     setPendingSearch({ searchQuery, startDate, endDate });
   };
+
+  // Handle time range changes from slider (debounced)
+  const handleTimeRangeChange = useCallback(
+    (newStartDate: string, newEndDate: string) => {
+      setPendingSearch({
+        searchQuery,
+        startDate: newStartDate,
+        endDate: newEndDate,
+      });
+    },
+    [searchQuery]
+  );
 
   const [logCount, setLogCount] = useState(100); // Add log count state
 
@@ -154,12 +165,8 @@ export const Home = () => {
     setTabs((prev) =>
       prev.map((tab) => {
         if (tab.id === updatedTab.id) {
-          // Update the tab title if resourceType changed
-          const svc = getServiceById(updatedTab.filters.resourceType);
-          return {
-            ...updatedTab,
-            title: svc ? svc.id : updatedTab.title,
-          };
+          // Use the title that was set by the query builder
+          return updatedTab;
         }
         return tab;
       })
@@ -204,9 +211,9 @@ export const Home = () => {
         filter: tab.query, // Use as filter if present
         filters: {
           ...tab.filters,
-          customQuery: searchQuery, // Apply global search
-          customStartTime: startDate, // Apply global start time
-          customEndTime: endDate, // Apply global end time
+          customQuery: pendingSearch.searchQuery, // Apply global search
+          customStartTime: pendingSearch.startDate, // Apply global start time
+          customEndTime: pendingSearch.endDate, // Apply global end time
         },
         pageSize: logCount, // Pass log count
       });
@@ -229,9 +236,9 @@ export const Home = () => {
     activeTabId,
     selectedProject,
     tabs,
-    searchQuery,
-    startDate,
-    endDate,
+    pendingSearch.searchQuery,
+    pendingSearch.startDate,
+    pendingSearch.endDate,
     logCount,
   ]);
 
@@ -345,6 +352,7 @@ export const Home = () => {
         setEndDate={setEndDate}
         isLoading={isLoading}
         onSearch={handleSearch}
+        onTimeRangeChange={handleTimeRangeChange}
       />
 
       {/* Tabs */}
