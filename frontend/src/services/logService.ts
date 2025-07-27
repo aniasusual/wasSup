@@ -1,5 +1,6 @@
 import { useAuth } from "../contexts/Auth";
 import axios from "axios";
+import toast from "react-hot-toast";
 
 export interface LogQueryParams {
     projectId: string;
@@ -40,7 +41,7 @@ export interface LogResponse {
 }
 
 export const useLogService = () => {
-    const { token } = useAuth();
+    const { token, forceLogout } = useAuth();
 
     const buildFilterString = (params: LogQueryParams): string => {
         let baseFilter = params.filter || "";
@@ -152,6 +153,7 @@ export const useLogService = () => {
 
     const fetchLogs = async (params: LogQueryParams): Promise<any> => {
         if (!token) {
+            forceLogout("No authentication token available");
             throw new Error("No authentication token available");
         }
         const filterString = buildFilterString(params);
@@ -189,8 +191,27 @@ export const useLogService = () => {
             }
             // If backend response is malformed, fall through to fallback
         } catch (error: any) {
+            // Check for authentication/authorization errors
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                forceLogout("Authentication token expired or invalid");
+                throw new Error("Authentication failed");
+            }
+
             // Fallback to direct Google API if backend fails
             console.warn("Backend log fetch failed, falling back to direct GCP API", error);
+
+            // Show error toast for backend failure
+            let errorMessage = "Failed to fetch logs from backend";
+            if (error.response?.data?.detail) {
+                errorMessage = `Backend error: ${error.response.data.detail}`;
+            } else if (error.response?.status) {
+                errorMessage = `Backend error: ${error.response.status} - ${error.response.statusText || 'Unknown error'}`;
+            } else if (error.message) {
+                errorMessage = `Network error: ${error.message}`;
+            } else {
+                errorMessage = `Unknown error: ${String(error)}`;
+            }
+            toast.error(errorMessage);
         }
 
         // Fallback: direct Google API call

@@ -45,7 +45,13 @@ const getSeverityColor = (severity: string) => {
 };
 
 const formatTimestamp = (timestamp: string | Date | null) => {
-  if (!timestamp) return "No timestamp";
+  if (!timestamp) {
+    return {
+      exact: "No timestamp",
+      relative: "No timestamp",
+      full: "No timestamp",
+    };
+  }
 
   const now = new Date();
   const timestampDate =
@@ -53,18 +59,41 @@ const formatTimestamp = (timestamp: string | Date | null) => {
 
   // Check if the date is valid
   if (isNaN(timestampDate.getTime())) {
-    return "Invalid date";
+    return {
+      exact: "Invalid date",
+      relative: "Invalid date",
+      full: "Invalid date",
+    };
   }
 
+  // Format exact timestamp with timezone
+  const exactTime =
+    timestampDate.toLocaleString("en-US", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }) + ` ${timestampDate.getMilliseconds().toString().padStart(3, "0")}ms`;
+
+  // Calculate relative time
   const diff = now.getTime() - timestampDate.getTime();
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (minutes > 0) return `${minutes}m ago`;
-  return "Just now";
+  let relativeTime = "Just now";
+  if (days > 0) relativeTime = `${days}d ago`;
+  else if (hours > 0) relativeTime = `${hours}h ago`;
+  else if (minutes > 0) relativeTime = `${minutes}m ago`;
+
+  return {
+    exact: exactTime,
+    relative: relativeTime,
+    full: `${exactTime} (${relativeTime})`,
+  };
 };
 
 const LogEntryComponent = ({ log }: { log: LogEntry }) => {
@@ -79,6 +108,15 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
   const hasStructuredData =
     log.jsonPayload || log.httpRequest || log.traceId || log.spanId;
 
+  // Helper function to get formatted timestamp
+  const getFormattedTimestamp = () => {
+    const formatted = formatTimestamp(log.timestamp);
+    return {
+      display: formatted.full,
+      tooltip: formatted.exact,
+    };
+  };
+
   return (
     <div
       className={`border-l-4 ${getSeverityColor(
@@ -92,8 +130,11 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
             {getSeverityIcon(log.severity)}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 text-sm">
-                <span className="text-gray-400 font-mono">
-                  {formatTimestamp(log.timestamp)}
+                <span
+                  className="text-gray-400 font-mono"
+                  title={getFormattedTimestamp().tooltip}
+                >
+                  {getFormattedTimestamp().display}
                 </span>
                 <span
                   className={`px-2 py-1 rounded text-xs font-medium ${
@@ -156,6 +197,25 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
                 {key}={value}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Detailed Timestamp Info */}
+        {isExpanded && (
+          <div className="mt-4 p-3 bg-gray-800 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-300 mb-2">
+              Timestamp Details
+            </h4>
+            <div className="text-xs text-gray-400 space-y-1">
+              <div>Exact Time: {formatTimestamp(log.timestamp).exact}</div>
+              <div>
+                Relative Time: {formatTimestamp(log.timestamp).relative}
+              </div>
+              <div>ISO Format: {String(log.timestamp)}</div>
+              <div>
+                Unix Timestamp: {new Date(log.timestamp).getTime().toString()}
+              </div>
+            </div>
           </div>
         )}
 

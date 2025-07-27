@@ -20,6 +20,7 @@ import {
 import type { LogTab } from "../types/gcp";
 import { useAuth } from "../contexts/Auth";
 import axios from "axios";
+import toast from "react-hot-toast";
 
 const SEVERITY_OPTIONS = ["ERROR", "WARNING", "INFO", "DEBUG"];
 // const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -305,7 +306,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   onQuerySubmit,
   isActive,
 }) => {
-  const { token } = useAuth();
+  const { token, forceLogout } = useAuth();
   const [resourceType, setResourceType] = useState<string>(
     tab.filters.resourceType || "cloud_run_revision"
   );
@@ -482,6 +483,12 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         let errorMessage = "Unknown error occurred";
 
         if (err.response) {
+          // Check for authentication errors
+          if (err.response.status === 401 || err.response.status === 403) {
+            forceLogout("Authentication token expired or invalid");
+            throw new Error("Authentication failed");
+          }
+
           // Server responded with error status
           if (err.response.data && err.response.data.message) {
             errorMessage = err.response.data.message;
@@ -500,6 +507,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           // Something else happened
           errorMessage = err.message || "Request failed";
         }
+
+        // Show toast notification for the error
+        toast.error(`Failed to fetch ${label} options: ${errorMessage}`);
 
         throw new Error(errorMessage);
       }
@@ -531,7 +541,8 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
       try {
         if (!token) {
-          throw new Error("No access token available");
+          forceLogout("No access token available");
+          throw new Error("Authentication failed");
         }
 
         const options = await fetchOptionsFromBackend(
@@ -775,6 +786,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   const handleParseManualQuery = useCallback(() => {
     if (!manualQuery.trim()) {
       setParseError("Please enter a query to parse");
+      toast.error("Please enter a query to parse");
       return;
     }
 
@@ -783,6 +795,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
     if (!parsed) {
       setParseError("Failed to parse query. Please check the format.");
+      toast.error("Failed to parse query. Please check the format.");
       return;
     }
 
@@ -793,6 +806,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
       ]
     ) {
       setParseError(`Unsupported resource type: ${parsed.resourceType}`);
+      toast.error(`Unsupported resource type: ${parsed.resourceType}`);
       return;
     }
 
@@ -820,6 +834,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     setShowManualQuery(false);
     setManualQuery("");
     addDebugMessage(`Successfully parsed query for ${parsed.resourceType}`);
+    toast.success(`Successfully parsed query for ${parsed.resourceType}`);
   }, [manualQuery, tab, onUpdateTab, addDebugMessage]);
 
   // Copy query to clipboard
@@ -827,9 +842,11 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     try {
       await navigator.clipboard.writeText(queryPreview);
       addDebugMessage("Query copied to clipboard");
+      toast.success("Query copied to clipboard");
     } catch (error) {
       console.error("Failed to copy query:", error);
       addDebugMessage("Failed to copy query to clipboard");
+      toast.error("Failed to copy query to clipboard");
     }
   }, [queryPreview, addDebugMessage]);
 

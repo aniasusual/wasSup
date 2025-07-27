@@ -1,5 +1,6 @@
 import { useState } from "react";
 import axios from "axios";
+import toast from "react-hot-toast";
 
 // Configure axios defaults
 axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL;
@@ -13,8 +14,15 @@ export const Login = () => {
     try {
       const response = await axios.get("/api/v1/auth/login");
       window.location.href = response.data.auth_url;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error);
+      let errorMessage = "Failed to initiate login";
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      toast.error(errorMessage);
       setLoading(false);
     }
   };
