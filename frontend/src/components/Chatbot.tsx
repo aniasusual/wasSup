@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { MessageSquare, Send } from "lucide-react";
+import toast from "react-hot-toast";
 
 type Message = {
   id: number;
@@ -27,20 +28,30 @@ export const Chatbot = ({ selectedServices }: any) => {
     setInput("");
     setIsTyping(true);
 
-    // Simulate AI response
+    // Simulate AI response with error handling
     setTimeout(() => {
-      const aiResponse: Message = {
-        id: Date.now() + 1,
-        text: `I've analyzed the logs from ${
-          selectedServices?.length > 0
-            ? "the selected services"
-            : "all services"
-        }. Based on your query "${input}", here's what I found...`,
-        sender: "ai",
-        timestamp: new Date().toLocaleTimeString(),
-      };
-      setMessages((prev: Message[]) => [...prev, aiResponse]);
-      setIsTyping(false);
+      try {
+        const aiResponse: Message = {
+          id: Date.now() + 1,
+          text: `I've analyzed the logs from ${
+            selectedServices?.length > 0
+              ? "the selected services"
+              : "all services"
+          }. Based on your query "${input}", here's what I found...`,
+          sender: "ai",
+          timestamp: new Date().toLocaleTimeString(),
+        };
+        setMessages((prev: Message[]) => [...prev, aiResponse]);
+      } catch (error) {
+        console.error("Error generating AI response:", error);
+        toast.error(
+          `Failed to generate AI response: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      } finally {
+        setIsTyping(false);
+      }
     }, 1500);
   };
 

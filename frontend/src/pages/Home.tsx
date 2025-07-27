@@ -9,8 +9,8 @@ import { useAuth } from "../contexts/Auth";
 import { useLogService } from "../services/logService";
 import type { GCPService, LogTab } from "../types/gcp";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
-
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
+import toast from "react-hot-toast";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -27,7 +27,7 @@ export const Home = () => {
   const [openQueryBuilderTabId, setOpenQueryBuilderTabId] = useState<
     string | null
   >(null);
-  const { token, logout } = useAuth();
+  const { token, logout, forceLogout } = useAuth();
   const { fetchLogs } = useLogService();
 
   // New: Simple search and date/time state
@@ -79,9 +79,34 @@ export const Home = () => {
         if (data.projects && data.projects.length > 0) {
           setSelectedProject(data.projects[0].project_id);
         }
+      } else {
+        // Check for authentication errors
+        if (response.status === 401 || response.status === 403) {
+          forceLogout("Authentication token expired or invalid");
+          return;
+        }
+
+        const errorData = await response.json().catch(() => ({}));
+        toast.error(
+          `Failed to fetch projects: ${errorData.detail || response.statusText}`
+        );
       }
     } catch (error) {
       console.error("Error fetching projects:", error);
+
+      // Check if it's an authentication error
+      if (
+        error instanceof Error &&
+        error.message.includes("Authentication failed")
+      ) {
+        return; // Already handled by forceLogout
+      }
+
+      toast.error(
+        `Failed to fetch projects: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   };
 
@@ -219,7 +244,17 @@ export const Home = () => {
       });
       setTabLogs((prev) => ({ ...prev, [tab.id]: res.logs }));
     } catch (e) {
+      console.error("Error fetching logs:", e);
+
+      // Check if it's an authentication error
+      if (e instanceof Error && e.message.includes("Authentication failed")) {
+        return; // Already handled by forceLogout
+      }
+
       setTabLogs((prev) => ({ ...prev, [tab.id]: [] }));
+      toast.error(
+        `Failed to fetch logs: ${e instanceof Error ? e.message : String(e)}`
+      );
     } finally {
       setIsLoading(false);
     }
