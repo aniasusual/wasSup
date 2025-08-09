@@ -140,6 +140,8 @@ export const Home = () => {
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(tabId);
     setSelectedService(service);
+    // Initial fetch for the newly created tab
+    void fetchLogsForTab(newTab);
   };
 
   // Update active tab when changed
@@ -339,14 +341,30 @@ export const Home = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    activeTabId,
     selectedProject,
-    tabs,
     pendingSearch.searchQuery,
     pendingSearch.startDate,
     pendingSearch.endDate,
     logCount,
   ]);
+
+  // Manual refresh handler
+  const handleRefresh = () => {
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (activeTab) {
+      void fetchLogsForTab(activeTab);
+    }
+  };
+
+  const refreshTabById = useCallback(
+    async (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      if (tab) {
+        await fetchLogsForTab(tab);
+      }
+    },
+    [tabs]
+  );
 
   return (
     <div className="bg-gray-950 min-h-screen flex flex-col">
@@ -386,7 +404,7 @@ export const Home = () => {
               {/* Action Buttons */}
               <div className="flex items-center gap-2 sm:gap-3">
                 <button
-                  onClick={() => {}}
+                  onClick={handleRefresh}
                   disabled={isLoading}
                   className="flex-1 sm:flex-none inline-flex items-center justify-center px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-300 bg-gray-800/50 border border-gray-700 rounded-lg hover:bg-gray-700/50 hover:text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -471,6 +489,7 @@ export const Home = () => {
               onTabSelect={handleTabSelect}
               onTabClose={handleTabClose}
               onOpenQueryBuilder={handleOpenQueryBuilder}
+              onRefreshTab={refreshTabById}
             />
           </div>
         </div>

@@ -1,5 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Settings,
+  RefreshCw,
+} from "lucide-react";
 import type { LogTab } from "../types/gcp";
 import { GCP_RESOURCE_MAPPINGS } from "../data/gcpResourceMappings";
 
@@ -9,6 +15,7 @@ interface LogTabsProps {
   onTabSelect: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
   onOpenQueryBuilder: (tabId: string) => void;
+  onRefreshTab?: (tabId: string) => void;
   className?: string;
 }
 
@@ -30,6 +37,7 @@ export const LogTabs = ({
   onTabSelect,
   onTabClose,
   onOpenQueryBuilder,
+  onRefreshTab,
   className = "",
 }: LogTabsProps) => {
   const [showLeftArrow, setShowLeftArrow] = useState(false);
@@ -167,6 +175,20 @@ export const LogTabs = ({
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
+                    {/* Refresh Tab */}
+                    {onRefreshTab && (
+                      <button
+                        className="p-1.5 rounded-full hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 focus:bg-blue-500/40 focus:text-blue-200 transition-all duration-200 flex-shrink-0"
+                        title="Refresh tab"
+                        aria-label="Refresh tab"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRefreshTab(tab.id);
+                        }}
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    )}
                     {/* Query Builder Icon */}
                     <button
                       className="p-1.5 rounded-full hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 focus:bg-blue-500/40 focus:text-blue-200 transition-all duration-200 flex-shrink-0"
