@@ -45,245 +45,11 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 # 
 # This ensures the same filtered logs are used for both display and analysis.
 
-@router.post("/logs/query")
-async def query_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
-    """Query GCP logs with pagination - returns both display logs and analysis data"""
-    print("query", query)
+# @router.post("/logs/query")
+# async def query_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
+#     """Query GCP logs with pagination - returns both display logs and analysis data"""
+#     print("query", query)
     
-    user_token_data = get_user_tokens(current_user)
-    if not user_token_data:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-    
-    # Check if token is expired
-    if is_token_expired(current_user):
-        # Try to refresh
-        await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
-    
-    try:
-        # Create credentials from token
-        credentials = Credentials(
-            token=user_token_data["access_token"],
-            refresh_token=user_token_data.get("refresh_token"),
-            token_uri=GOOGLE_TOKEN_URL,
-            client_id=GOOGLE_CLIENT_ID,
-            client_secret=GOOGLE_CLIENT_SECRET
-        )
-
-        # Create logging client
-        client = gcp_logging.Client(
-            project=query["project_id"],
-            credentials=credentials
-        )
-        
-        # Build filter
-        filter_str = query.get("filter", "")
-        
-        # Pagination parameters
-        page_size = min(query.get("page_size", 50), 100)  # Cap at 100
-        page_token = query.get("page_token", None)
-        
-        # List entries with pagination
-        entries = client.list_entries(
-            filter_=filter_str,
-            order_by=query.get("order_by", "timestamp desc"),
-            page_size=page_size,
-            page_token=page_token
-        )
-
-        # Convert to response format with essential data only
-        logs = []
-        analysis_data = {
-            "total_entries": 0,
-            "severity_distribution": {},
-            "resource_types": set(),
-            "time_range": {"earliest": None, "latest": None},
-            "error_count": 0,
-            "warning_count": 0,
-            "info_count": 0,
-            "logs_for_analysis": []
-        }
-        
-        for entry in entries:
-            # Create display log entry
-            log_entry = {
-                "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
-                "severity": str(entry.severity or "DEFAULT"),
-                "message": entry.payload.get("message", str(entry.payload)) if isinstance(entry.payload, dict) else str(entry.payload),
-                "resource_type": entry.resource.type if entry.resource else None,
-                "resource_labels": entry.resource.labels if entry.resource else {},
-                "labels": entry.labels or {},
-                "insertId": entry.insert_id,
-                "logName": entry.log_name
-            }
-            logs.append(log_entry)
-
-            print("log_entry", log_entry)
-            
-            # Build analysis data
-            analysis_data["total_entries"] += 1
-            severity = str(entry.severity or "DEFAULT")
-            
-            # Track severity distribution
-            analysis_data["severity_distribution"][severity] = analysis_data["severity_distribution"].get(severity, 0) + 1
-            
-            # Track resource types
-            if entry.resource and entry.resource.type:
-                analysis_data["resource_types"].add(entry.resource.type)
-            
-            # Track time range
-            if entry.timestamp:
-                if not analysis_data["time_range"]["earliest"] or entry.timestamp < analysis_data["time_range"]["earliest"]:
-                    analysis_data["time_range"]["earliest"] = entry.timestamp
-                if not analysis_data["time_range"]["latest"] or entry.timestamp > analysis_data["time_range"]["latest"]:
-                    analysis_data["time_range"]["latest"] = entry.timestamp
-            
-            # Count by severity
-            if severity.upper() in ["ERROR", "CRITICAL"]:
-                analysis_data["error_count"] += 1
-            elif severity.upper() == "WARNING":
-                analysis_data["warning_count"] += 1
-            elif severity.upper() == "INFO":
-                analysis_data["info_count"] += 1
-            
-            # Store for analysis (same data as display but structured for agent)
-            analysis_data["logs_for_analysis"].append(log_entry)
-
-        # Convert sets to lists for JSON serialization
-        analysis_data["resource_types"] = list(analysis_data["resource_types"])
-        
-        # Convert timestamps to ISO format
-        if analysis_data["time_range"]["earliest"]:
-            analysis_data["time_range"]["earliest"] = analysis_data["time_range"]["earliest"].isoformat()
-        if analysis_data["time_range"]["latest"]:
-            analysis_data["time_range"]["latest"] = analysis_data["time_range"]["latest"].isoformat()
-
-        # Get next page token if available
-        next_page_token = None
-        if hasattr(entries, 'next_page_token') and entries.next_page_token:
-            next_page_token = entries.next_page_token
-
-        return {
-            "logs": logs,  # For display
-            "analysis_data": analysis_data,  # For agent analysis
-            "pagination": {
-                "next_page_token": next_page_token,
-                "page_size": page_size,
-                "has_more": next_page_token is not None
-            },
-            "metadata": {
-                "total_entries": len(logs),
-                "filter_applied": filter_str,
-                "project_id": query["project_id"]
-            }
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error querying logs: {str(e)}")
-
-@router.post("/logs/fetch")
-async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
-    """
-    Fetch logs from GCP and return in frontend-compatible format (logs, nextPageToken, totalEntries).
-    """
-    user_token_data = get_user_tokens(current_user)
-    if not user_token_data:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-
-    if is_token_expired(current_user):
-        await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
-
-    def fetch_logs_sync():
-        try:
-            credentials = Credentials(
-                token=user_token_data["access_token"],
-                refresh_token=user_token_data.get("refresh_token"),
-                token_uri=GOOGLE_TOKEN_URL,
-                client_id=GOOGLE_CLIENT_ID,
-                client_secret=GOOGLE_CLIENT_SECRET
-            )
-
-            client = gcp_logging.Client(
-                project=query["projectId"],
-                credentials=credentials
-            )
-
-            filter_str = query.get("filter", "")
-            page_size = min(query.get("pageSize", 1000), 1000)
-            page_token = query.get("pageToken", None)
-            order_by = query.get("orderBy", "timestamp desc")
-
-            logger.info(f"Fetching logs with filter: {filter_str}, page_size: {page_size}")
-
-            # Use the iterator properly
-            entries_iterator = client.list_entries(
-                filter_=filter_str,
-                order_by=order_by,
-                page_size=page_size,
-                page_token=page_token
-            )
-
-            logs = []
-            count = 0
-            next_page_token = None
-
-            # Get only the requested page size
-            for entry in entries_iterator:
-                if count >= page_size:
-                    break
-                    
-                logs.append({
-                    "id": getattr(entry, "insert_id", None) or f"entry_{count}",
-                    "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
-                    "severity": str(entry.severity or "DEFAULT"),
-                    "message": entry.payload.get("message", str(entry.payload)) if isinstance(entry.payload, dict) else str(entry.payload),
-                    "resource": {
-                        "type": entry.resource.type if entry.resource else "",
-                        "labels": dict(entry.resource.labels) if entry.resource else {}
-                    },
-                    "labels": dict(entry.labels) if entry.labels else {},
-                    "jsonPayload": entry.payload if isinstance(entry.payload, dict) else None,
-                    "textPayload": entry.payload if isinstance(entry.payload, str) else None,
-                    "httpRequest": getattr(entry, "http_request", None),
-                    "traceId": getattr(entry, "trace", None),
-                    "spanId": getattr(entry, "span_id", None),
-                    "logName": entry.log_name
-                })
-                count += 1
-
-            # Try to get next page token
-            try:
-                next_page_token = entries_iterator.next_page_token
-            except:
-                next_page_token = None
-
-            logger.info(f"Successfully fetched {len(logs)} logs")
-
-            return {
-                "logs": logs,
-                "nextPageToken": next_page_token,
-                "totalEntries": len(logs)  # Current page count
-            }
-
-        except Exception as e:
-            logger.error(f"Error in fetch_logs_sync: {str(e)}", exc_info=True)
-            raise e
-
-    try:
-        # Run the synchronous GCP call in a thread pool to avoid blocking
-        with ThreadPoolExecutor() as executor:
-            result = await asyncio.get_event_loop().run_in_executor(
-                executor, fetch_logs_sync
-            )
-        return result
-
-    except Exception as e:
-        logger.error(f"Error fetching logs: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error fetching logs: {str(e)}")
-# @router.get("/logs/projects")
-# async def get_projects(current_user: str = Depends(get_current_user)):
-#     """Get list of GCP projects accessible to the user"""
 #     user_token_data = get_user_tokens(current_user)
 #     if not user_token_data:
 #         raise HTTPException(status_code=401, detail="User not authenticated")
@@ -303,59 +69,21 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
 #             client_id=GOOGLE_CLIENT_ID,
 #             client_secret=GOOGLE_CLIENT_SECRET
 #         )
-        
-#         # Create resource manager client
-#         client = resourcemanager_v3.ProjectsClient(credentials=credentials)
-        
-#         # List projects
-#         request = resourcemanager_v3.ListProjectsRequest()
-#         projects = []
-        
-#         page_result = client.list_projects(request=request)
-#         for project in page_result:
-#             projects.append({
-#                 "project_id": project.project_id,
-#                 "name": project.display_name,
-#                 "state": project.state.name
-#             })
-        
-#         return {"projects": projects}
-        
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error fetching projects: {str(e)}")
 
-# @router.post("/logs/summary")
-# async def get_log_summary(query: Any = Body(...), current_user: str = Depends(get_current_user)):
-#     """Get log summary for agent analysis - returns aggregated data instead of raw logs"""
-#     user_token_data = get_user_tokens(current_user)
-#     if not user_token_data:
-#         raise HTTPException(status_code=401, detail="User not authenticated")
-    
-#     # Check if token is expired
-#     if is_token_expired(current_user):
-#         await refresh_token(current_user)
-#         user_token_data = get_user_tokens(current_user)
-    
-#     try:
-#         credentials = Credentials(
-#             token=user_token_data["access_token"],
-#             refresh_token=user_token_data.get("refresh_token"),
-#             token_uri=GOOGLE_TOKEN_URL,
-#             client_id=GOOGLE_CLIENT_ID,
-#             client_secret=GOOGLE_CLIENT_SECRET
-#         )
-
+#         # Create logging client
 #         client = gcp_logging.Client(
 #             project=query["project_id"],
 #             credentials=credentials
 #         )
         
+#         # Build filter
 #         filter_str = query.get("filter", "")
         
-#         # Get a larger sample for analysis (but still paginated)
-#         page_size = min(query.get("page_size", 1000), 2000)  # Larger for analysis
+#         # Pagination parameters
+#         page_size = min(query.get("page_size", 50), 100)  # Cap at 100
 #         page_token = query.get("page_token", None)
         
+#         # List entries with pagination
 #         entries = client.list_entries(
 #             filter_=filter_str,
 #             order_by=query.get("order_by", "timestamp desc"),
@@ -363,87 +91,258 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
 #             page_token=page_token
 #         )
 
-#         # Create summary data for agent analysis
-#         summary = {
+#         # Convert to response format with essential data only
+#         logs = []
+#         analysis_data = {
 #             "total_entries": 0,
 #             "severity_distribution": {},
 #             "resource_types": set(),
 #             "time_range": {"earliest": None, "latest": None},
-#             "common_patterns": [],
 #             "error_count": 0,
 #             "warning_count": 0,
-#             "info_count": 0
+#             "info_count": 0,
+#             "logs_for_analysis": []
 #         }
         
-#         logs_for_analysis = []
-        
 #         for entry in entries:
-#             summary["total_entries"] += 1
+#             # Create display log entry
+#             log_entry = {
+#                 "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
+#                 "severity": str(entry.severity or "DEFAULT"),
+#                 "message": entry.payload.get("message", str(entry.payload)) if isinstance(entry.payload, dict) else str(entry.payload),
+#                 "resource_type": entry.resource.type if entry.resource else None,
+#                 "resource_labels": entry.resource.labels if entry.resource else {},
+#                 "labels": entry.labels or {},
+#                 "insertId": entry.insert_id,
+#                 "logName": entry.log_name
+#             }
+#             logs.append(log_entry)
+
+#             print("log_entry", log_entry)
             
-#             # Track severity
+#             # Build analysis data
+#             analysis_data["total_entries"] += 1
 #             severity = str(entry.severity or "DEFAULT")
-#             summary["severity_distribution"][severity] = summary["severity_distribution"].get(severity, 0) + 1
+            
+#             # Track severity distribution
+#             analysis_data["severity_distribution"][severity] = analysis_data["severity_distribution"].get(severity, 0) + 1
             
 #             # Track resource types
 #             if entry.resource and entry.resource.type:
-#                 summary["resource_types"].add(entry.resource.type)
+#                 analysis_data["resource_types"].add(entry.resource.type)
             
 #             # Track time range
 #             if entry.timestamp:
-#                 if not summary["time_range"]["earliest"] or entry.timestamp < summary["time_range"]["earliest"]:
-#                     summary["time_range"]["earliest"] = entry.timestamp
-#                 if not summary["time_range"]["latest"] or entry.timestamp > summary["time_range"]["latest"]:
-#                     summary["time_range"]["latest"] = entry.timestamp
+#                 if not analysis_data["time_range"]["earliest"] or entry.timestamp < analysis_data["time_range"]["earliest"]:
+#                     analysis_data["time_range"]["earliest"] = entry.timestamp
+#                 if not analysis_data["time_range"]["latest"] or entry.timestamp > analysis_data["time_range"]["latest"]:
+#                     analysis_data["time_range"]["latest"] = entry.timestamp
             
 #             # Count by severity
 #             if severity.upper() in ["ERROR", "CRITICAL"]:
-#                 summary["error_count"] += 1
+#                 analysis_data["error_count"] += 1
 #             elif severity.upper() == "WARNING":
-#                 summary["warning_count"] += 1
+#                 analysis_data["warning_count"] += 1
 #             elif severity.upper() == "INFO":
-#                 summary["info_count"] += 1
+#                 analysis_data["info_count"] += 1
             
-#             # Store essential data for analysis
-#             log_data = {
-#                 "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
-#                 "severity": severity,
-#                 "message": entry.payload.get("message", str(entry.payload)) if isinstance(entry.payload, dict) else str(entry.payload),
-#                 "resource_type": entry.resource.type if entry.resource else None,
-#                 "labels": entry.labels or {},
-#                 "logName": entry.log_name
-#             }
-#             logs_for_analysis.append(log_data)
+#             # Store for analysis (same data as display but structured for agent)
+#             analysis_data["logs_for_analysis"].append(log_entry)
 
 #         # Convert sets to lists for JSON serialization
-#         summary["resource_types"] = list(summary["resource_types"])
+#         analysis_data["resource_types"] = list(analysis_data["resource_types"])
         
 #         # Convert timestamps to ISO format
-#         if summary["time_range"]["earliest"]:
-#             summary["time_range"]["earliest"] = summary["time_range"]["earliest"].isoformat()
-#         if summary["time_range"]["latest"]:
-#             summary["time_range"]["latest"] = summary["time_range"]["latest"].isoformat()
+#         if analysis_data["time_range"]["earliest"]:
+#             analysis_data["time_range"]["earliest"] = analysis_data["time_range"]["earliest"].isoformat()
+#         if analysis_data["time_range"]["latest"]:
+#             analysis_data["time_range"]["latest"] = analysis_data["time_range"]["latest"].isoformat()
 
-#         # Get next page token
+#         # Get next page token if available
 #         next_page_token = None
 #         if hasattr(entries, 'next_page_token') and entries.next_page_token:
 #             next_page_token = entries.next_page_token
 
 #         return {
-#             "summary": summary,
-#             "logs_for_analysis": logs_for_analysis,
+#             "logs": logs,  # For display
+#             "analysis_data": analysis_data,  # For agent analysis
 #             "pagination": {
 #                 "next_page_token": next_page_token,
 #                 "page_size": page_size,
 #                 "has_more": next_page_token is not None
 #             },
 #             "metadata": {
+#                 "total_entries": len(logs),
 #                 "filter_applied": filter_str,
 #                 "project_id": query["project_id"]
 #             }
 #         }
         
 #     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error getting log summary: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Error querying logs: {str(e)}")
+
+@router.post("/logs/fetch")
+async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
+    """
+    Fetch logs from GCP and return in frontend-compatible format (logs, nextPageToken, totalEntries).
+    """
+    user_token_data = get_user_tokens(current_user)
+    if not user_token_data:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+
+    if is_token_expired(current_user):
+        await refresh_token(current_user)
+        user_token_data = get_user_tokens(current_user)
+
+    def fetch_logs_sync():
+        try:
+            # Build request to Logging REST API to reliably capture nextPageToken
+            import requests
+
+            filter_str = query.get("filter", "")
+            page_size = query.get("pageSize", 1000)
+            page_token = query.get("pageToken", None)
+            order_by = query.get("orderBy", "timestamp desc")
+            project_id = query["projectId"]
+
+            logger.info(
+                f"Fetching logs via REST with filter: {filter_str}, page_size: {page_size}, page_token: {page_token}"
+            )
+
+            url = "https://logging.googleapis.com/v2/entries:list"
+            headers = {
+                "Authorization": f"Bearer {user_token_data['access_token']}",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "resourceNames": [f"projects/{project_id}"],
+                "filter": filter_str,
+                "orderBy": order_by,
+                "pageSize": page_size,
+            }
+            if page_token:
+                body["pageToken"] = page_token
+
+            resp = requests.post(url, headers=headers, json=body, timeout=60)
+            if not resp.ok:
+                try:
+                    detail = resp.json()
+                except Exception:
+                    detail = resp.text
+                raise HTTPException(status_code=resp.status_code, detail=str(detail))
+
+            data = resp.json() or {}
+            entries = data.get("entries", [])
+            next_page_token = data.get("nextPageToken")
+
+            logs = []
+            for idx, entry in enumerate(entries):
+                # entry is a dict from REST response
+                timestamp = entry.get("timestamp")
+                severity = entry.get("severity", "DEFAULT")
+                json_payload = entry.get("jsonPayload")
+                text_payload = entry.get("textPayload")
+                message = None
+                if isinstance(json_payload, dict):
+                    message = json_payload.get("message") or str(json_payload)
+                elif isinstance(text_payload, str):
+                    message = text_payload
+                else:
+                    message = str(json_payload or text_payload or "")
+
+                resource = entry.get("resource") or {}
+                resource_type = resource.get("type", "") if isinstance(resource, dict) else ""
+                resource_labels = resource.get("labels", {}) if isinstance(resource, dict) else {}
+
+                logs.append(
+                    {
+                        "id": entry.get("insertId") or f"entry_{idx}",
+                        "timestamp": timestamp,
+                        "severity": str(severity),
+                        "message": message,
+                        "resource": {
+                            "type": resource_type,
+                            "labels": dict(resource_labels) if isinstance(resource_labels, dict) else {},
+                        },
+                        "labels": dict(entry.get("labels", {})) if isinstance(entry.get("labels"), dict) else {},
+                        "jsonPayload": json_payload if isinstance(json_payload, dict) else None,
+                        "textPayload": text_payload if isinstance(text_payload, str) else None,
+                        "httpRequest": entry.get("httpRequest"),
+                        "traceId": entry.get("trace"),
+                        "spanId": entry.get("spanId"),
+                        "logName": entry.get("logName"),
+                    }
+                )
+
+            logger.info(f"Successfully fetched {len(logs)} logs via REST")
+
+            return {
+                "logs": logs,
+                "nextPageToken": next_page_token,
+                "totalEntries": len(logs),
+            }
+
+        except Exception as e:
+            logger.error(f"Error in fetch_logs_sync: {str(e)}", exc_info=True)
+            raise e
+
+    try:
+        # Run the synchronous GCP call in a thread pool to avoid blocking
+        with ThreadPoolExecutor() as executor:
+            result = await asyncio.get_event_loop().run_in_executor(
+                executor, fetch_logs_sync
+            )
+        return result
+
+    except Exception as e:
+        logger.error(f"Error fetching logs: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error fetching logs: {str(e)}")
+    
+
+    
+@router.get("/logs/projects")
+async def get_projects(current_user: str = Depends(get_current_user)):
+    """Get list of GCP projects accessible to the user"""
+    user_token_data = get_user_tokens(current_user)
+    if not user_token_data:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+    
+    # Check if token is expired
+    if is_token_expired(current_user):
+        # Try to refresh
+        await refresh_token(current_user)
+        user_token_data = get_user_tokens(current_user)
+    
+    try:
+        # Create credentials from token
+        credentials = Credentials(
+            token=user_token_data["access_token"],
+            refresh_token=user_token_data.get("refresh_token"),
+            token_uri=GOOGLE_TOKEN_URL,
+            client_id=GOOGLE_CLIENT_ID,
+            client_secret=GOOGLE_CLIENT_SECRET
+        )
+        
+        # Create resource manager client
+        client = resourcemanager_v3.ProjectsClient(credentials=credentials)
+        
+        # List projects
+        request = resourcemanager_v3.ListProjectsRequest()
+        projects = []
+        
+        page_result = client.list_projects(request=request)
+        for project in page_result:
+            projects.append({
+                "project_id": project.project_id,
+                "name": project.display_name,
+                "state": project.state.name
+            })
+        
+        return {"projects": projects}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching projects: {str(e)}")
+
 
 # @router.post("/logs/stream")
 # async def stream_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
@@ -730,45 +629,3 @@ async def gcp_resource_options(
         print(f"Unexpected error in gcp_resource_options: {error_trace}")
         return {"options": [], "message": f"Unexpected error: {str(e)}"}
     
-
-    
-# @router.get("/logs/deployments/{project_id}/{service_id}")
-# async def get_deployments(project_id: str, service_id: str, current_user: str = Depends(get_current_user)):
-#     """Get deployments/instances for a specific GCP service"""
-#     user_token_data = get_user_tokens(current_user)
-#     if not user_token_data:
-#         raise HTTPException(status_code=401, detail="User not authenticated")
-    
-#     # Check if token is expired
-#     if is_token_expired(current_user):
-#         # Try to refresh
-#         await refresh_token(current_user)
-#         user_token_data = get_user_tokens(current_user)
-    
-#     try:
-#         # Create credentials from token
-#         credentials = Credentials(
-#             token=user_token_data["access_token"],
-#             refresh_token=user_token_data.get("refresh_token"),
-#             token_uri=GOOGLE_TOKEN_URL,
-#             client_id=GOOGLE_CLIENT_ID,
-#             client_secret=GOOGLE_CLIENT_SECRET
-#         )
-
-#         # Create deployment service
-#         deployment_service = GCPDeploymentService(credentials)
-#         print("deployment_service", deployment_service)
-        
-#         # Get deployments for the specified service
-#         deployments = await deployment_service.get_deployments(project_id, service_id)
-        
-#         return {
-#             "deployments": deployments,
-#             "service_id": service_id,
-#             "project_id": project_id,
-#             "count": len(deployments)
-#         }
-        
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error fetching deployments: {str(e)}")
-

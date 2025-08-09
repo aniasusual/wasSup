@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, RefreshCw, Download, Settings, X } from "lucide-react";
 import { ProviderSelector } from "../components/ProviderSelector";
 import { LogTabs } from "../components/LogTabs";
@@ -20,7 +20,11 @@ export const Home = () => {
   const [activeTabId, setActiveTabId] = useState<string>("");
   // Change logs to be per-tab
   const [tabLogs, setTabLogs] = useState<Record<string, any[]>>({});
+  const [tabNextTokens, setTabNextTokens] = useState<
+    Record<string, string | null>
+  >({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [selectedProvider, setSelectedProvider] = useState<any>();
@@ -243,6 +247,10 @@ export const Home = () => {
         pageSize: logCount, // Pass log count
       });
       setTabLogs((prev) => ({ ...prev, [tab.id]: res.logs }));
+      setTabNextTokens((prev) => ({
+        ...prev,
+        [tab.id]: res.nextPageToken || null,
+      }));
     } catch (e) {
       console.error("Error fetching logs:", e);
 
@@ -259,6 +267,69 @@ export const Home = () => {
       setIsLoading(false);
     }
   };
+
+  // Load more logs using nextPageToken for the active tab
+  const loadMoreForActiveTab = useCallback(async () => {
+    if (!activeTabId) return;
+    if (isLoading || isLoadingMore) return;
+    const nextToken = tabNextTokens[activeTabId];
+    if (!nextToken) return;
+
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab || !selectedProject) return;
+
+    setIsLoadingMore(true);
+    try {
+      const res = await fetchLogs({
+        projectId: selectedProject,
+        serviceId: tab.filters.resourceType,
+        filter: tab.query,
+        filters: {
+          ...tab.filters,
+          customQuery: pendingSearch.searchQuery,
+          customStartTime: pendingSearch.startDate,
+          customEndTime: pendingSearch.endDate,
+        },
+        pageSize: logCount,
+        pageToken: nextToken,
+      });
+      setTabLogs((prev) => ({
+        ...prev,
+        [activeTabId]: [...(prev[activeTabId] || []), ...(res.logs || [])],
+      }));
+      setTabNextTokens((prev) => ({
+        ...prev,
+        [activeTabId]: res.nextPageToken || null,
+      }));
+    } catch (e) {
+      console.error("Error loading more logs:", e);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [
+    activeTabId,
+    isLoading,
+    isLoadingMore,
+    tabNextTokens,
+    tabs,
+    selectedProject,
+    fetchLogs,
+    pendingSearch.searchQuery,
+    pendingSearch.startDate,
+    pendingSearch.endDate,
+    logCount,
+  ]);
+
+  // Infinite scroll: track scroll position on the logs container
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const threshold = 150; // px from bottom
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - threshold) {
+      void loadMoreForActiveTab();
+    }
+  }, [loadMoreForActiveTab]);
 
   // Fetch logs when active tab, global filters, or its filters/query changes
   useEffect(() => {
@@ -494,8 +565,18 @@ export const Home = () => {
                     </p>
                   </div>
                 ) : (
-                  <div className="max-h-[calc(100vh-300px)] sm:max-h-[calc(100vh-350px)] xl:max-h-[calc(100vh-400px)] overflow-y-auto">
+                  <div
+                    ref={scrollContainerRef}
+                    onScroll={handleScroll}
+                    className="max-h-[calc(100vh-300px)] sm:max-h-[calc(100vh-350px)] xl:max-h-[calc(100vh-400px)] overflow-y-auto"
+                  >
                     <EnhancedLogViewer logs={tabLogs[activeTabId] || []} />
+                    {/* Loading more indicator */}
+                    {isLoadingMore && (
+                      <div className="py-2 text-center text-xs text-gray-400">
+                        Loading more...
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
