@@ -10,3 +10,5 @@ google-cloud-dataproc
 google-cloud-scheduler
 fastapi
 httpx
+qdrant-client
+google-generativeai

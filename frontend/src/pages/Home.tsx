@@ -11,6 +11,7 @@ import type { GCPService, LogTab } from "../types/gcp";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
 import toast from "react-hot-toast";
+import { parseGCPErrorMessage } from "../utils/errorUtils";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -28,6 +29,14 @@ export const Home = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [selectedProvider, setSelectedProvider] = useState<any>();
+
+  // Handler for provider selection
+  const handleProviderSelect = (provider: any) => {
+    setSelectedProvider(provider);
+    // Clear projects when switching providers
+    setProjects([]);
+    setSelectedProject("");
+  };
   const [openQueryBuilderTabId, setOpenQueryBuilderTabId] = useState<
     string | null
   >(null);
@@ -64,8 +73,11 @@ export const Home = () => {
   const [logCount, setLogCount] = useState(100); // Add log count state
 
   useEffect(() => {
-    fetchProjects();
-  }, [token]);
+    // Only fetch projects if we have a token and a selected provider
+    if (token && selectedProvider) {
+      fetchProjects();
+    }
+  }, [token, selectedProvider]);
 
   const fetchProjects = async () => {
     if (!token) return;
@@ -91,9 +103,9 @@ export const Home = () => {
         }
 
         const errorData = await response.json().catch(() => ({}));
-        toast.error(
-          `Failed to fetch projects: ${errorData.detail || response.statusText}`
-        );
+        const errorMessage = errorData.detail || response.statusText;
+        const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
+        toast.error(`Failed to fetch projects: ${userFriendlyMessage}`);
       }
     } catch (error) {
       console.error("Error fetching projects:", error);
@@ -106,11 +118,10 @@ export const Home = () => {
         return; // Already handled by forceLogout
       }
 
-      toast.error(
-        `Failed to fetch projects: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
+      toast.error(`Failed to fetch projects: ${userFriendlyMessage}`);
     }
   };
 
@@ -141,6 +152,62 @@ export const Home = () => {
     setActiveTabId(tabId);
     setSelectedService(service);
     // Initial fetch for the newly created tab
+    void fetchLogsForTab(newTab);
+  };
+
+  // Create an insight tab when clicking a relevant log from chat
+  const handleOpenInsightFromChat = ({ sourceMessageId, log }: any) => {
+    const tabId = `insight-${log.id}-${Date.now()}`;
+
+    // Create a more descriptive title based on log content
+    let title = `🔍 AI Insight`;
+    if (log.severity === "ERROR") {
+      title = `🚨 Error Analysis`;
+    } else if (log.severity === "WARNING") {
+      title = `⚠️ Warning Investigation`;
+    } else if (log.serviceId) {
+      title = `🔍 ${log.serviceId} Analysis`;
+    }
+
+    // Build a custom query to find related logs
+    const customQuery = log.traceId
+      ? `traceId="${log.traceId}"`
+      : log.insertId
+      ? `insertId="${log.insertId}"`
+      : `resource.type="${log.serviceId}" AND severity="${log.severity}"`;
+
+    const newTab: LogTab = {
+      id: tabId,
+      title,
+      serviceId: log.serviceId || "unknown",
+      isActive: true,
+      filters: {
+        severity: log.severity ? [log.severity] : [],
+        resourceType: log.serviceId || "",
+        logType: [],
+        sourceLocation: "",
+        userAccount: "",
+        requestId: log.traceId || "",
+        timeRange: "custom",
+        customQuery,
+        customStartTime: "",
+        customEndTime: "",
+      },
+      query: customQuery,
+      lastUpdated: new Date(),
+      type: "insight",
+      sourceMessageId,
+      primaryLogId: log.insertId || log.id,
+    };
+
+    setTabs((prev) => [
+      ...prev.map((t) => ({ ...t, isActive: false })),
+      newTab,
+    ]);
+    setActiveTabId(tabId);
+    setSelectedService(undefined);
+
+    // Fetch logs for the insight tab
     void fetchLogsForTab(newTab);
   };
 
@@ -233,7 +300,7 @@ export const Home = () => {
 
   // Fetch logs for a specific tab, always applying global search and time filters
   const fetchLogsForTab = async (tab: LogTab) => {
-    if (!selectedProject || !tab) return;
+    if (!selectedProvider || !selectedProject || !tab) return;
     setIsLoading(true);
     try {
       const res = await fetchLogs({
@@ -248,10 +315,13 @@ export const Home = () => {
         },
         pageSize: logCount, // Pass log count
       });
-      setTabLogs((prev) => ({ ...prev, [tab.id]: res.logs }));
+      const logs = Array.isArray(res?.logs) ? res.logs : [];
+      const nextToken =
+        typeof res?.nextPageToken === "string" ? res.nextPageToken : null;
+      setTabLogs((prev) => ({ ...prev, [tab.id]: logs }));
       setTabNextTokens((prev) => ({
         ...prev,
-        [tab.id]: res.nextPageToken || null,
+        [tab.id]: nextToken,
       }));
     } catch (e) {
       console.error("Error fetching logs:", e);
@@ -262,9 +332,9 @@ export const Home = () => {
       }
 
       setTabLogs((prev) => ({ ...prev, [tab.id]: [] }));
-      toast.error(
-        `Failed to fetch logs: ${e instanceof Error ? e.message : String(e)}`
-      );
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
+      toast.error(`Failed to fetch logs: ${userFriendlyMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -278,7 +348,7 @@ export const Home = () => {
     if (!nextToken) return;
 
     const tab = tabs.find((t) => t.id === activeTabId);
-    if (!tab || !selectedProject) return;
+    if (!tab || !selectedProvider || !selectedProject) return;
 
     setIsLoadingMore(true);
     try {
@@ -295,13 +365,16 @@ export const Home = () => {
         pageSize: logCount,
         pageToken: nextToken,
       });
+      const logs = Array.isArray(res?.logs) ? res.logs : [];
+      const next =
+        typeof res?.nextPageToken === "string" ? res.nextPageToken : null;
       setTabLogs((prev) => ({
         ...prev,
-        [activeTabId]: [...(prev[activeTabId] || []), ...(res.logs || [])],
+        [activeTabId]: [...(prev[activeTabId] || []), ...logs],
       }));
       setTabNextTokens((prev) => ({
         ...prev,
-        [activeTabId]: res.nextPageToken || null,
+        [activeTabId]: next,
       }));
     } catch (e) {
       console.error("Error loading more logs:", e);
@@ -376,12 +449,12 @@ export const Home = () => {
             <div className="flex items-center justify-between sm:justify-start">
               <div className="flex items-center space-x-2 sm:space-x-4">
                 <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                  Wassup?
+                  Recce
                 </h1>
                 <div className="hidden sm:block h-6 w-px bg-gray-700"></div>
                 <div className="hidden sm:block">
                   <span className="text-xs sm:text-sm text-gray-400">
-                    Exploring the logs. Wanna join?
+                    Reconnaissance of the logs
                   </span>
                 </div>
               </div>
@@ -396,7 +469,7 @@ export const Home = () => {
                 </label>
                 <ProviderSelector
                   selectedProvider={selectedProvider}
-                  onProviderSelect={setSelectedProvider}
+                  onProviderSelect={handleProviderSelect}
                   className="w-full sm:w-64 md:w-80 lg:w-96"
                 />
               </div>
@@ -455,29 +528,33 @@ export const Home = () => {
         </div>
       </header>
 
-      {/* Provider-specific filters */}
-      <ProviderFilters
-        selectedProvider={selectedProvider}
-        selectedProject={selectedProject}
-        setSelectedProject={setSelectedProject}
-        projects={projects}
-        selectedService={selectedService}
-        onServiceSelect={handleServiceSelect}
-        selectedDeployment={undefined}
-        onDeploymentSelect={() => {}}
-      />
-      {/* Modern Search and Date/Time Filter Bar */}
-      <DateTimeSearchBar
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
-        isLoading={isLoading}
-        onSearch={handleSearch}
-        onTimeRangeChange={handleTimeRangeChange}
-      />
+      {/* Provider-specific filters - only show when provider is selected */}
+      {selectedProvider && (
+        <ProviderFilters
+          selectedProvider={selectedProvider}
+          selectedProject={selectedProject}
+          setSelectedProject={setSelectedProject}
+          projects={projects}
+          selectedService={selectedService}
+          onServiceSelect={handleServiceSelect}
+          selectedDeployment={undefined}
+          onDeploymentSelect={() => {}}
+        />
+      )}
+      {/* Modern Search and Date/Time Filter Bar - only show when provider is selected */}
+      {selectedProvider && (
+        <DateTimeSearchBar
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          startDate={startDate}
+          setStartDate={setStartDate}
+          endDate={endDate}
+          setEndDate={setEndDate}
+          isLoading={isLoading}
+          onSearch={handleSearch}
+          onTimeRangeChange={handleTimeRangeChange}
+        />
+      )}
 
       {/* Tabs */}
       {tabs.length > 0 && (
@@ -522,100 +599,127 @@ export const Home = () => {
 
       {/* Main Content */}
       <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4 sm:py-6">
-        <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-4 sm:gap-6 xl:gap-8 2xl:gap-12 h-full">
-          {/* Logs Section */}
-          <div className="xl:col-span-13 2xl:col-span-13 space-y-3 sm:space-y-4 xl:space-y-6">
-            {/* Logs Viewer Card */}
-            <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden">
-              <div className="px-4 sm:px-6 xl:px-8 py-3 sm:py-4 xl:py-6 border-b border-gray-800/50 bg-gray-900/30">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
-                  <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4">
-                    <h3 className="text-base sm:text-lg xl:text-xl font-semibold text-white">
-                      Log Entries
-                    </h3>
-                    {/* Log count dropdown */}
-                    <select
-                      className="ml-2 px-2 py-1 rounded bg-gray-800 text-blue-400 border border-blue-800 text-xs xl:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={logCount}
-                      onChange={(e) => setLogCount(Number(e.target.value))}
-                      style={{ minWidth: 60 }}
-                      title="Select number of logs to display"
-                    >
-                      {[50, 100, 200, 500, 1000].map((count) => (
-                        <option key={count} value={count}>
-                          {count}
-                        </option>
-                      ))}
-                    </select>
-                    {activeTabId &&
-                      tabLogs[activeTabId] &&
-                      tabLogs[activeTabId].length > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 sm:px-2.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
-                          {tabLogs[activeTabId].length} entries
+        {!selectedProvider ? (
+          // Show welcome message when no provider is selected
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 xl:w-24 xl:h-24 bg-gray-800 rounded-full flex items-center justify-center mb-6 sm:mb-8 xl:mb-10">
+              <span className="text-2xl sm:text-3xl xl:text-4xl">☁️</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl xl:text-3xl font-semibold text-white mb-3 sm:mb-4 xl:mb-6 text-center">
+              Welcome to Recce
+            </h2>
+            <p className="text-gray-400 text-center max-w-md sm:max-w-lg xl:max-w-xl text-sm sm:text-base xl:text-lg mb-6 sm:mb-8 xl:mb-10">
+              Select a cloud provider from the header to start exploring your
+              logs and get insights from your data.
+            </p>
+            <div className="text-center">
+              <p className="text-gray-500 text-xs sm:text-sm xl:text-base">
+                Currently supporting: Google Cloud Platform
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-4 sm:gap-6 xl:gap-8 2xl:gap-12 h-full">
+            {/* Logs Section */}
+            <div className="xl:col-span-13 2xl:col-span-13 space-y-3 sm:space-y-4 xl:space-y-6">
+              {/* Logs Viewer Card */}
+              <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden">
+                <div className="px-4 sm:px-6 xl:px-8 py-3 sm:py-4 xl:py-6 border-b border-gray-800/50 bg-gray-900/30">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+                    <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4">
+                      <h3 className="text-base sm:text-lg xl:text-xl font-semibold text-white">
+                        Log Entries
+                      </h3>
+                      {/* Log count dropdown */}
+                      <select
+                        className="ml-2 px-2 py-1 rounded bg-gray-800 text-blue-400 border border-blue-800 text-xs xl:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={logCount}
+                        onChange={(e) => setLogCount(Number(e.target.value))}
+                        style={{ minWidth: 60 }}
+                        title="Select number of logs to display"
+                      >
+                        {[50, 100, 200, 500, 1000].map((count) => (
+                          <option key={count} value={count}>
+                            {count}
+                          </option>
+                        ))}
+                      </select>
+                      {activeTabId &&
+                        tabLogs[activeTabId] &&
+                        tabLogs[activeTabId].length > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 sm:px-2.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
+                            {tabLogs[activeTabId].length} entries
+                          </span>
+                        )}
+                    </div>
+                    {isLoading && (
+                      <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
+                        <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                        <span className="text-xs sm:text-sm xl:text-base">
+                          Loading logs...
                         </span>
-                      )}
+                      </div>
+                    )}
                   </div>
-                  {isLoading && (
-                    <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
-                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                      <span className="text-xs sm:text-sm xl:text-base">
-                        Loading logs...
-                      </span>
+                </div>
+                <div className="relative">
+                  {(!activeTabId ||
+                    !tabLogs[activeTabId] ||
+                    tabLogs[activeTabId].length === 0) &&
+                  !isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
+                        <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
+                      </div>
+                      <h3 className="text-base sm:text-lg xl:text-xl font-medium text-gray-300 mb-2 xl:mb-3 text-center">
+                        No logs found
+                      </h3>
+                      <p className="text-gray-500 text-center max-w-sm sm:max-w-md xl:max-w-lg text-xs sm:text-sm xl:text-lg">
+                        {!selectedProject || !selectedService
+                          ? "Select a project and service to start exploring logs"
+                          : "Try adjusting your search query or filters to find relevant logs"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      ref={scrollContainerRef}
+                      onScroll={handleScroll}
+                      className="max-h-[calc(100vh-300px)] sm:max-h-[calc(100vh-350px)] xl:max-h-[calc(100vh-400px)] overflow-y-auto"
+                    >
+                      <EnhancedLogViewer logs={tabLogs[activeTabId] || []} />
+                      {/* Loading more indicator */}
+                      {isLoadingMore && (
+                        <div className="py-2 text-center text-xs text-gray-400">
+                          Loading more...
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
-              <div className="relative">
-                {(!activeTabId ||
-                  !tabLogs[activeTabId] ||
-                  tabLogs[activeTabId].length === 0) &&
-                !isLoading ? (
-                  <div className="flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
-                    <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
-                      <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
-                    </div>
-                    <h3 className="text-base sm:text-lg xl:text-xl font-medium text-gray-300 mb-2 xl:mb-3 text-center">
-                      No logs found
-                    </h3>
-                    <p className="text-gray-500 text-center max-w-sm sm:max-w-md xl:max-w-lg text-xs sm:text-sm xl:text-lg">
-                      {!selectedProject || !selectedService
-                        ? "Select a project and service to start exploring logs"
-                        : "Try adjusting your search query or filters to find relevant logs"}
-                    </p>
-                  </div>
-                ) : (
-                  <div
-                    ref={scrollContainerRef}
-                    onScroll={handleScroll}
-                    className="max-h-[calc(100vh-300px)] sm:max-h-[calc(100vh-350px)] xl:max-h-[calc(100vh-400px)] overflow-y-auto"
-                  >
-                    <EnhancedLogViewer logs={tabLogs[activeTabId] || []} />
-                    {/* Loading more indicator */}
-                    {isLoadingMore && (
-                      <div className="py-2 text-center text-xs text-gray-400">
-                        Loading more...
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
-          </div>
 
-          {/* Chatbot Section */}
-          <div className="xl:col-span-7 2xl:col-span-7">
-            <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden h-[300px] sm:h-[400px] xl:h-[calc(100vh-300px)] 2xl:h-[calc(100vh-280px)] xl:sticky xl:top-24">
-              <div className="px-3 sm:px-4 xl:px-6 py-2 sm:py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
-                <h3 className="text-xs sm:text-sm xl:text-base font-semibold text-white">
-                  AI Assistant
-                </h3>
-              </div>
-              <div className="h-full">
-                <Chatbot selectedServices={[]} />
+            {/* Chatbot Section */}
+            <div className="xl:col-span-7 2xl:col-span-7 min-h-0">
+              <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg h-[300px] sm:h-[400px] xl:h-[calc(100vh-300px)] 2xl:h-[calc(100vh-280px)] xl:sticky xl:top-24 overflow-hidden">
+                <div className="h-full flex flex-col min-h-0">
+                  <Chatbot
+                    selectedServices={
+                      selectedService ? [selectedService.id] : []
+                    }
+                    projectId={selectedProject}
+                    onOpenInsight={handleOpenInsightFromChat}
+                    openTabs={tabs}
+                    activeTabId={activeTabId}
+                    tabLogs={tabLogs}
+                    pendingSearch={pendingSearch}
+                    logCount={logCount}
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );

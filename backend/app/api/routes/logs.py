@@ -18,10 +18,12 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 
 from ..data.gcpApiEndpoints import GCP_API_ENDPOINTS
+from ...services.vector_store import QdrantVectorStore
 
 
 router = APIRouter(tags=["logs"])
 logger = logging.getLogger(__name__)
+vector_store = QdrantVectorStore()
 
 # Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -205,6 +207,8 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
             order_by = query.get("orderBy", "timestamp desc")
             project_id = query["projectId"]
 
+            print("filter_str", filter_str)
+
             logger.info(
                 f"Fetching logs via REST with filter: {filter_str}, page_size: {page_size}, page_token: {page_token}"
             )
@@ -271,10 +275,18 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
                         "traceId": entry.get("trace"),
                         "spanId": entry.get("spanId"),
                         "logName": entry.get("logName"),
+                        "projectId": project_id,
                     }
                 )
 
             logger.info(f"Successfully fetched {len(logs)} logs via REST")
+
+            # Async index into Qdrant (best-effort; ignore embedding failures)
+            try:
+                collection = f"logs_{project_id}"
+                vector_store.upsert_logs(collection=collection, items=logs, text_key="message")
+            except Exception as _:
+                pass
 
             return {
                 "logs": logs,

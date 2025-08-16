@@ -1,6 +1,7 @@
 import { useAuth } from "../contexts/Auth";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { parseGCPErrorMessage } from "../utils/errorUtils";
 
 export interface LogQueryParams {
     projectId: string;
@@ -151,7 +152,7 @@ export const useLogService = () => {
         return filters.filter(Boolean).join(" AND ");
     };
 
-    const fetchLogs = async (params: LogQueryParams): Promise<any> => {
+    const fetchLogs = async (params: LogQueryParams): Promise<LogResponse> => {
         if (!token) {
             forceLogout("No authentication token available");
             throw new Error("No authentication token available");
@@ -203,15 +204,18 @@ export const useLogService = () => {
             // Show error toast for backend failure
             let errorMessage = "Failed to fetch logs from backend";
             if (error.response?.data?.detail) {
-                errorMessage = `Backend error: ${error.response.data.detail}`;
+                errorMessage = error.response.data.detail;
             } else if (error.response?.status) {
-                errorMessage = `Backend error: ${error.response.status} - ${error.response.statusText || 'Unknown error'}`;
+                errorMessage = `${error.response.status} - ${error.response.statusText || 'Unknown error'}`;
             } else if (error.message) {
-                errorMessage = `Network error: ${error.message}`;
+                errorMessage = error.message;
             } else {
-                errorMessage = `Unknown error: ${String(error)}`;
+                errorMessage = String(error);
             }
-            toast.error(errorMessage);
+            const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
+            toast.error(`Failed to fetch logs: ${userFriendlyMessage}`);
+            // Throw so callers can handle error via catch; prevents returning undefined
+            throw new Error(errorMessage);
         }
 
         // Fallback: direct Google API call
@@ -264,6 +268,12 @@ export const useLogService = () => {
         //     }
         //     throw error;
         // }
+        // If fallback is disabled or not available, return an empty response to satisfy the contract
+        return {
+            logs: [],
+            nextPageToken: undefined,
+            totalEntries: 0,
+        };
     };
 
     return {

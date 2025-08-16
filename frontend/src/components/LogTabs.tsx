@@ -133,7 +133,11 @@ export const LogTabs = ({
                 onClick={() => onTabSelect(tab.id)}
                 className={`group relative flex items-center gap-2 px-4 py-3 cursor-pointer min-w-[180px] flex-shrink-0 transition-all duration-300 select-none
                   ${
-                    tab.id === activeTabId
+                    tab.type === "insight"
+                      ? tab.id === activeTabId
+                        ? "bg-gradient-to-b from-purple-800 to-purple-900 text-white border-t-2 border-purple-500 shadow-xl"
+                        : "bg-purple-900/30 text-purple-200 hover:bg-purple-800/40 hover:text-white border-t-2 border-transparent hover:border-purple-600/70"
+                      : tab.id === activeTabId
                       ? "bg-gradient-to-b from-gray-800 to-gray-900 text-white border-t-2 border-blue-500 shadow-xl"
                       : "bg-gray-800/40 text-gray-300 hover:bg-gray-700/60 hover:text-white border-t-2 border-transparent hover:border-gray-600/70"
                   }
@@ -158,7 +162,11 @@ export const LogTabs = ({
                 {/* Tab background overlay */}
                 <div
                   className={`absolute inset-0 ${
-                    tab.id === activeTabId
+                    tab.type === "insight"
+                      ? tab.id === activeTabId
+                        ? "bg-gradient-to-b from-purple-500/10 to-transparent"
+                        : "bg-gradient-to-b from-purple-700/10 to-transparent"
+                      : tab.id === activeTabId
                       ? "bg-gradient-to-b from-blue-500/10 to-transparent"
                       : "bg-gradient-to-b from-gray-700/10 to-transparent"
                   }`}

@@ -21,6 +21,7 @@ import type { LogTab } from "../types/gcp";
 import { useAuth } from "../contexts/Auth";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { parseGCPErrorMessage } from "../utils/errorUtils";
 
 const SEVERITY_OPTIONS = ["ERROR", "WARNING", "INFO", "DEBUG"];
 // const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -509,7 +510,8 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         }
 
         // Show toast notification for the error
-        toast.error(`Failed to fetch ${label} options: ${errorMessage}`);
+        const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
+        toast.error(`Failed to fetch ${label} options: ${userFriendlyMessage}`);
 
         throw new Error(errorMessage);
       }
