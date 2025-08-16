@@ -32,6 +32,14 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 async def health_check():
     return {"status": "healthy"}
 
+
+@app.on_event("startup")
+async def startup_event():
+    """Startup tasks when the application starts."""
+    from .services.session_cleanup import start_cleanup_task
+    start_cleanup_task()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

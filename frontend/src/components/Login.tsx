@@ -59,7 +59,7 @@ export const Login = () => {
         </div>
 
         <h1 className="text-4xl font-bold mb-3 text-center text-white">
-          Wassup?
+          Recce
         </h1>
 
         <p className="text-cyan-400 text-center mb-2 text-lg font-medium">
@@ -67,7 +67,7 @@ export const Login = () => {
         </p>
 
         <p className="text-slate-400 text-center mb-8 text-sm">
-          Just ask "Wassup?" with your logs and get instant answers
+          Reconnaissance of the logs
         </p>
 
         {/* How it works section */}

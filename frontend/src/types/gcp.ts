@@ -20,6 +20,9 @@ export interface LogTab {
     filters: FilterState;
     query: string;
     lastUpdated: Date;
+    type?: 'standard' | 'insight';
+    sourceMessageId?: string;
+    primaryLogId?: string;
 }
 
 export interface FilterState {
