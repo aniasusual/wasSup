@@ -333,6 +333,9 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   const [manualQuery, setManualQuery] = useState("");
   const [parseError, setParseError] = useState<string>("");
 
+  // Check if this is a project logs tab
+  const isProjectLogs = tab.serviceId === "project_logs";
+
   // Use refs to track the latest values to prevent stale closures
   const resourceTypeRef = useRef(resourceType);
   const projectIdRef = useRef(projectId);
@@ -632,6 +635,14 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
   // Fetch options for all labels when component mounts or resourceType changes
   useEffect(() => {
+    // Skip fetching for project logs since we don't need resource-specific labels
+    if (isProjectLogs) {
+      addDebugMessage(
+        "Skipping label fetch for project logs - no resource type needed"
+      );
+      return;
+    }
+
     const mapping =
       GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
     if (!mapping || !projectId) {
@@ -667,11 +678,13 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     fetchDropdownOptions,
     addDebugMessage,
     getDependenciesForLabel,
+    isProjectLogs,
   ]);
 
   // Handle dependencies: refetch dependent dropdowns when a dependency changes
   useEffect(() => {
-    if (Object.keys(dependencyValues).length === 0) return;
+    // Skip dependency handling for project logs
+    if (isProjectLogs || Object.keys(dependencyValues).length === 0) return;
 
     const mapping =
       GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
@@ -707,39 +720,63 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     fetchDropdownOptions,
     addDebugMessage,
     getDependenciesForLabel,
+    isProjectLogs,
   ]);
 
-  // Build query preview
+  // Generate query preview
   useEffect(() => {
-    let query = `resource.type="${resourceType}"`;
-    const mapping =
-      GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
-    if (mapping) {
-      mapping.labels.forEach((label: string) => {
-        if (resourceLabels[label]) {
-          query += ` AND resource.labels.${label}="${resourceLabels[label]}"`;
+    if (isProjectLogs) {
+      // For project logs, we don't include resource type filters
+      const conditions: string[] = [];
+
+      // Add additional queries
+      additionalQueries.forEach((q) => {
+        if (q.value) {
+          conditions.push(`${q.type}="${q.value}"`);
         }
       });
+
+      // Add resource labels if any are set
+      Object.entries(resourceLabels).forEach(([key, value]) => {
+        if (value) {
+          conditions.push(`resource.labels.${key}="${value}"`);
+        }
+      });
+
+      const query = conditions.length > 0 ? conditions.join(" AND ") : "";
+      setQueryPreview(query);
+      addDebugMessage(
+        `Generated project logs query: ${query || "No filters (all logs)"}`
+      );
+    } else {
+      // For specific services, include resource type
+      const conditions: string[] = [`resource.type="${resourceType}"`];
+
+      // Add additional queries
+      additionalQueries.forEach((q) => {
+        if (q.value) {
+          conditions.push(`${q.type}="${q.value}"`);
+        }
+      });
+
+      // Add resource labels
+      Object.entries(resourceLabels).forEach(([key, value]) => {
+        if (value) {
+          conditions.push(`resource.labels.${key}="${value}"`);
+        }
+      });
+
+      const query = conditions.join(" AND ");
+      setQueryPreview(query);
+      addDebugMessage(`Generated query for ${resourceType}: ${query}`);
     }
-    additionalQueries.forEach((q: any) => {
-      if (q.type === "severity" && q.value) {
-        query += ` AND severity="${q.value}"`;
-      } else if (q.type === "timestamp" && q.value) {
-        query += ` AND timestamp${q.operator || ">="}"${q.value}"`;
-      } else if (q.type === "custom" && q.value) {
-        query += ` AND (${q.value})`;
-      } else if (q.type === "jsonPayload" && q.value) {
-        query += ` AND jsonPayload.${q.value}`;
-      } else if (q.type === "textPayload" && q.value) {
-        query += ` AND textPayload:"${q.value}"`;
-      } else if (q.type === "labels" && q.value) {
-        query += ` AND labels.${q.value}`;
-      } else if (q.type && q.value) {
-        query += ` AND ${q.type}="${q.value}"`;
-      }
-    });
-    setQueryPreview(query);
-  }, [resourceType, resourceLabels, additionalQueries]);
+  }, [
+    resourceType,
+    resourceLabels,
+    additionalQueries,
+    isProjectLogs,
+    addDebugMessage,
+  ]);
 
   // Handle label change
   const handleLabelChange = useCallback(
@@ -1240,64 +1277,36 @@ severity>=DEFAULT`}
     <div className="w-full max-w-6xl mx-auto mt-8 mb-8 p-8 bg-gradient-to-br from-slate-900/90 to-slate-800/90 border border-slate-700/50 rounded-3xl shadow-2xl backdrop-blur-lg">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Query Builder
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-100 mb-2">
+              {isProjectLogs
+                ? "Project Logs Query Builder"
+                : "GCP Query Builder"}
             </h2>
-            {Object.values(apiStatus).some(
-              (s) => s.status === "fallback" || s.status === "error"
-            ) && (
-              <span className="inline-flex items-center gap-1 text-xs bg-amber-500/20 text-amber-300 px-3 py-1.5 rounded-full border border-amber-500/20">
-                <AlertCircle className="w-3 h-3" />
-                Using Test Data
-              </span>
-            )}
+            <p className="text-slate-400">
+              {isProjectLogs
+                ? "Build queries to filter logs across all services in your project"
+                : "Build queries to filter logs from specific GCP services"}
+            </p>
           </div>
-
-          <button
-            onClick={() => setShowDebug(!showDebug)}
-            className="flex items-center gap-2 px-3 py-2 text-xs bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded-lg transition-all duration-200 ease-in-out border border-slate-600/50"
-          >
-            <Bug className="w-4 h-4" />
-            Debug
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg transition-all duration-200"
+              onClick={() => setShowDebug(!showDebug)}
+              title="Toggle debug info"
+            >
+              <Bug className="w-4 h-4" />
+            </button>
+            <button
+              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg transition-all duration-200"
+              onClick={() => setShowManualQuery(!showManualQuery)}
+              title="Toggle manual query input"
+            >
+              <FileText className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-
-        {!token && (
-          <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl backdrop-blur-sm">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />
-              <div>
-                <p className="text-blue-300 font-medium text-sm">
-                  No Authentication Token
-                </p>
-                <p className="text-blue-200/80 text-xs mt-1">
-                  All dropdowns will use test data for demonstration.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showDebug && (
-          <>
-            {renderApiStatus()}
-            {renderDebugControls()}
-            <div className="mb-6 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm">
-              <div className="text-xs font-medium text-slate-300 mb-3">
-                Debug Information:
-              </div>
-              <div className="max-h-32 overflow-y-auto text-xs text-slate-400 space-y-1 font-mono">
-                {debugInfo.map((info, i) => (
-                  <div key={i} className="opacity-80">
-                    {info}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
       </div>
 
       {/* Resource Type Selection */}
@@ -1311,12 +1320,22 @@ severity>=DEFAULT`}
             </label>
           </div>
           <div className="col-span-8">
-            <SearchableSelect
-              options={Object.keys(GCP_RESOURCE_MAPPINGS)}
-              value={resourceType}
-              onChange={handleResourceTypeChange}
-              placeholder="Select resource type"
-            />
+            {isProjectLogs ? (
+              <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-slate-200 text-sm backdrop-blur-sm">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <span>
+                  All services are being queried. Resource type selection is
+                  disabled.
+                </span>
+              </div>
+            ) : (
+              <SearchableSelect
+                options={Object.keys(GCP_RESOURCE_MAPPINGS)}
+                value={resourceType}
+                onChange={handleResourceTypeChange}
+                placeholder="Select resource type"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1326,115 +1345,205 @@ severity>=DEFAULT`}
         <h3 className="text-lg font-semibold text-slate-200 mb-6">
           Resource Labels
         </h3>
-        {renderLabelDropdowns()}
+        {isProjectLogs ? (
+          <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/30 border border-slate-700/50 rounded-xl text-slate-300 text-sm">
+            <AlertCircle className="w-4 h-4 text-amber-400" />
+            <span>
+              No resource labels needed for project-wide logs. All services will
+              be included.
+            </span>
+          </div>
+        ) : (
+          renderLabelDropdowns()
+        )}
       </div>
 
       {/* Additional Query Conditions */}
-      {additionalQueries.length > 0 && (
+      {isProjectLogs ? (
         <div className="mb-8">
           <h3 className="text-lg font-semibold text-slate-200 mb-6">
             Additional Conditions
           </h3>
-          <div className="space-y-4">
-            {additionalQueries.map((q, idx) => (
-              <div
-                key={idx}
-                className="flex items-center gap-4 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm"
-              >
-                <span className="text-sm font-medium text-slate-300 min-w-[120px]">
-                  {q.type} =
-                </span>
-                {q.type === "severity" ? (
-                  <SearchableSelect
-                    options={SEVERITY_OPTIONS}
-                    value={q.value}
-                    onChange={(val) => {
-                      setAdditionalQueries((prev) =>
-                        prev.map((item, i) =>
-                          i === idx ? { ...item, value: val } : item
-                        )
-                      );
-                    }}
-                    placeholder="Select severity"
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    className="flex-1 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-slate-200 text-sm backdrop-blur-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
-                    value={q.value}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setAdditionalQueries((prev) =>
-                        prev.map((item, i) =>
-                          i === idx ? { ...item, value: val } : item
-                        )
-                      );
-                    }}
-                    placeholder={`Enter ${q.type}`}
-                  />
-                )}
-                <button
-                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200 ease-in-out"
-                  onClick={() => handleRemoveQuery(idx)}
-                  title="Remove condition"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+          <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/30 border border-slate-700/50 rounded-xl text-slate-300 text-sm mb-4">
+            <AlertCircle className="w-4 h-4 text-amber-400" />
+            <span>
+              You can still add conditions like severity, timestamp, or custom
+              queries to filter logs across all services.
+            </span>
           </div>
+          {additionalQueries.length > 0 && (
+            <div className="space-y-4">
+              {additionalQueries.map((q, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-4 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm"
+                >
+                  <span className="text-sm font-medium text-slate-300 min-w-[120px]">
+                    {q.type} =
+                  </span>
+                  {q.type === "severity" ? (
+                    <SearchableSelect
+                      options={SEVERITY_OPTIONS}
+                      value={q.value}
+                      onChange={(val) => {
+                        setAdditionalQueries((prev) =>
+                          prev.map((item, i) =>
+                            i === idx ? { ...item, value: val } : item
+                          )
+                        );
+                      }}
+                      placeholder="Select severity"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="flex-1 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-slate-200 text-sm backdrop-blur-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
+                      value={q.value}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAdditionalQueries((prev) =>
+                          prev.map((item, i) =>
+                            i === idx ? { ...item, value: val } : item
+                          )
+                        );
+                      }}
+                      placeholder={`Enter ${q.type}`}
+                    />
+                  )}
+                  <button
+                    className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200 ease-in-out"
+                    onClick={() => handleRemoveQuery(idx)}
+                    title="Remove condition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+      ) : (
+        additionalQueries.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-slate-200 mb-6">
+              Additional Conditions
+            </h3>
+            <div className="space-y-4">
+              {additionalQueries.map((q, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-4 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm"
+                >
+                  <span className="text-sm font-medium text-slate-300 min-w-[120px]">
+                    {q.type} =
+                  </span>
+                  {q.type === "severity" ? (
+                    <SearchableSelect
+                      options={SEVERITY_OPTIONS}
+                      value={q.value}
+                      onChange={(val) => {
+                        setAdditionalQueries((prev) =>
+                          prev.map((item, i) =>
+                            i === idx ? { ...item, value: val } : item
+                          )
+                        );
+                      }}
+                      placeholder="Select severity"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="flex-1 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-slate-200 text-sm backdrop-blur-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
+                      value={q.value}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAdditionalQueries((prev) =>
+                          prev.map((item, i) =>
+                            i === idx ? { ...item, value: val } : item
+                          )
+                        );
+                      }}
+                      placeholder={`Enter ${q.type}`}
+                    />
+                  )}
+                  <button
+                    className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200 ease-in-out"
+                    onClick={() => handleRemoveQuery(idx)}
+                    title="Remove condition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
       )}
 
       {/* Action Buttons */}
       <div className="flex items-center gap-4 mb-8">
-        <button
-          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
-          onClick={() => setShowAddQuery(true)}
-          type="button"
-        >
-          <Plus className="w-4 h-4" /> Add Condition
-        </button>
+        {isProjectLogs ? (
+          <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/30 border border-slate-700/50 rounded-xl text-slate-300 text-sm">
+            <AlertCircle className="w-4 h-4 text-amber-400" />
+            <span>
+              Add conditions to filter logs across all services in the project.
+            </span>
+          </div>
+        ) : (
+          <button
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
+            onClick={() => setShowAddQuery(true)}
+            type="button"
+          >
+            <Plus className="w-4 h-4" /> Add Condition
+          </button>
+        )}
 
         <button
           className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
-          onClick={() => setShowManualQuery(true)}
+          onClick={() => onQuerySubmit(queryPreview)}
           type="button"
         >
-          <FileText className="w-4 h-4" /> Paste Query
-        </button>
-
-        <button
-          className="inline-flex items-center gap-2 px-6 py-3 bg-slate-700/50 hover:bg-slate-700 text-slate-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
-          onClick={handleClearAll}
-          type="button"
-        >
-          <Trash2 className="w-4 h-4" /> Clear All
+          <CheckCircle className="w-4 h-4" /> Apply Query
         </button>
       </div>
 
       {/* Query Preview */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <label className="block text-sm font-medium text-slate-300">
-            Generated Query
-          </label>
-          <button
-            onClick={handleCopyQuery}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded-lg transition-all duration-200 ease-in-out border border-slate-600/50"
-            title="Copy query to clipboard"
-          >
-            <Copy className="w-3 h-3" />
-            Copy
-          </button>
-        </div>
-        <div className="relative">
-          <textarea
-            className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 text-slate-200 text-sm font-mono resize-none backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
-            value={queryPreview}
-            readOnly
-            rows={4}
-          />
+        <h3 className="text-lg font-semibold text-slate-200 mb-4">
+          Query Preview
+        </h3>
+        {isProjectLogs && (
+          <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-300 text-sm">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span>
+                <strong>Project Logs Mode:</strong> This query will fetch logs
+                from all services in your project. No resource type filter is
+                applied.
+              </span>
+            </div>
+          </div>
+        )}
+        <div className="p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-slate-300">
+              Generated Query:
+            </span>
+            <button
+              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg transition-all duration-200"
+              onClick={() => {
+                navigator.clipboard.writeText(queryPreview);
+                toast.success("Query copied to clipboard!");
+              }}
+              title="Copy query to clipboard"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="font-mono text-sm text-slate-200 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+            {queryPreview || "No query generated yet"}
+          </div>
         </div>
       </div>
 
@@ -1463,8 +1572,99 @@ severity>=DEFAULT`}
       {/* Add Query Modal */}
       {showAddQuery && renderAddQueryModal()}
 
+      {/* Manual Query Input */}
+      {showManualQuery && (
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-slate-200 mb-4">
+            Manual Query Input
+          </h3>
+          {isProjectLogs && (
+            <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-300 text-sm">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                <span>
+                  <strong>Project Logs Mode:</strong> You can enter any valid
+                  GCP Logging query. No resource type filter will be
+                  automatically added.
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="space-y-4">
+            <textarea
+              className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 text-slate-200 text-sm font-mono resize-none backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
+              value={manualQuery}
+              onChange={(e) => setManualQuery(e.target.value)}
+              placeholder="Enter your GCP Logging query here..."
+              rows={6}
+            />
+            <div className="flex items-center gap-4">
+              <button
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-200 ease-in-out font-medium"
+                onClick={handleParseManualQuery}
+                type="button"
+              >
+                <CheckCircle className="w-4 h-4" /> Parse Query
+              </button>
+              <button
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg transition-all duration-200 ease-in-out font-medium"
+                onClick={() => setManualQuery("")}
+                type="button"
+              >
+                <X className="w-4 h-4" /> Clear
+              </button>
+            </div>
+            {parseError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-sm">
+                <div className="flex items-center gap-2">
+                  <XCircle className="w-4 h-4" />
+                  <span>Parse Error: {parseError}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Manual Query Modal */}
       {renderManualQueryModal()}
+
+      {/* Authentication Token Warning */}
+      {!token && (
+        <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />
+            <div>
+              <p className="text-blue-300 font-medium text-sm">
+                No Authentication Token
+              </p>
+              <p className="text-blue-200/80 text-xs mt-1">
+                All dropdowns will use test data for demonstration.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug Information */}
+      {showDebug && (
+        <>
+          {renderApiStatus()}
+          {renderDebugControls()}
+          <div className="mb-6 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm">
+            <div className="text-xs font-medium text-slate-300 mb-3">
+              Debug Information:
+            </div>
+            <div className="max-h-32 overflow-y-auto text-xs text-slate-400 space-y-1 font-mono">
+              {debugInfo.map((info, i) => (
+                <div key={i} className="opacity-80">
+                  {info}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
