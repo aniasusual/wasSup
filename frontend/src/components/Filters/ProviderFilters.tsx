@@ -1,7 +1,7 @@
 import React from "react";
 import GcpFilters from "./GcpFilters";
 import type { CloudProvider } from "../../types/providers";
-import type { GCPService, DeploymentInfo } from "../../types/gcp";
+import type { GCPService } from "../../types/gcp";
 
 interface ProviderFiltersProps {
   selectedProvider: CloudProvider | undefined;
@@ -11,8 +11,6 @@ interface ProviderFiltersProps {
   projects: any[];
   selectedService: GCPService | undefined;
   onServiceSelect: (service: GCPService) => void;
-  selectedDeployment: DeploymentInfo | undefined;
-  onDeploymentSelect: (deployment: DeploymentInfo) => void;
 }
 
 const ProviderFilters: React.FC<ProviderFiltersProps> = ({
@@ -22,8 +20,6 @@ const ProviderFilters: React.FC<ProviderFiltersProps> = ({
   projects,
   selectedService,
   onServiceSelect,
-  selectedDeployment,
-  onDeploymentSelect,
 }) => {
   if (!selectedProvider) {
     return null;
@@ -39,8 +35,6 @@ const ProviderFilters: React.FC<ProviderFiltersProps> = ({
           projects={projects}
           selectedService={selectedService}
           onServiceSelect={onServiceSelect}
-          selectedDeployment={selectedDeployment}
-          onDeploymentSelect={onDeploymentSelect}
         />
       );
 

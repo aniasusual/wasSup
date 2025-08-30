@@ -45,8 +45,26 @@ export const Home = () => {
 
   // New: Simple search and date/time state
   const [searchQuery, setSearchQuery] = useState("");
-  const [startDate, setStartDate] = useState(""); // ISO string
-  const [endDate, setEndDate] = useState(""); // ISO string
+  const [startDate, setStartDate] = useState(() => {
+    // Default to 1 hour ago
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const year = oneHourAgo.getFullYear();
+    const month = String(oneHourAgo.getMonth() + 1).padStart(2, "0");
+    const day = String(oneHourAgo.getDate()).padStart(2, "0");
+    const hours = String(oneHourAgo.getHours()).padStart(2, "0");
+    const minutes = String(oneHourAgo.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    // Default to now
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  });
   const [pendingSearch, setPendingSearch] = useState({
     searchQuery: "",
     startDate: "",
@@ -61,6 +79,7 @@ export const Home = () => {
   // Handle time range changes from slider (debounced)
   const handleTimeRangeChange = useCallback(
     (newStartDate: string, newEndDate: string) => {
+      console.log("Time range changed:", { newStartDate, newEndDate });
       setPendingSearch({
         searchQuery,
         startDate: newStartDate,
@@ -71,6 +90,21 @@ export const Home = () => {
   );
 
   const [logCount, setLogCount] = useState(100); // Add log count state
+
+  // Initialize pending search with default time values
+  useEffect(() => {
+    if (
+      startDate &&
+      endDate &&
+      (!pendingSearch.startDate || !pendingSearch.endDate)
+    ) {
+      setPendingSearch({
+        searchQuery: "",
+        startDate,
+        endDate,
+      });
+    }
+  }, [startDate, endDate, pendingSearch.startDate, pendingSearch.endDate]);
 
   useEffect(() => {
     // Only fetch projects if we have a token and a selected provider
@@ -537,8 +571,6 @@ export const Home = () => {
           projects={projects}
           selectedService={selectedService}
           onServiceSelect={handleServiceSelect}
-          selectedDeployment={undefined}
-          onDeploymentSelect={() => {}}
         />
       )}
       {/* Modern Search and Date/Time Filter Bar - only show when provider is selected */}
@@ -709,11 +741,6 @@ export const Home = () => {
                     }
                     projectId={selectedProject}
                     onOpenInsight={handleOpenInsightFromChat}
-                    openTabs={tabs}
-                    activeTabId={activeTabId}
-                    tabLogs={tabLogs}
-                    pendingSearch={pendingSearch}
-                    logCount={logCount}
                   />
                 </div>
               </div>

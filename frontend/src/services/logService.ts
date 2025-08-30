@@ -47,12 +47,21 @@ export const useLogService = () => {
     const buildFilterString = (params: LogQueryParams): string => {
         let baseFilter = params.filter || "";
         const filters: string[] = [];
+
+        // Handle project_logs service type
+        if (params.serviceId === "project_logs") {
+            console.log("Building filter for project_logs - no resource type filter will be applied");
+            // For project logs, we don't add any resource type filters, allowing all logs
+        }
+
         if (!baseFilter) {
-            // Base resource type filter
-            filters.push(`resource.type="${params.serviceId}"`);
+            // Base resource type filter - skip for project_logs
+            if (params.serviceId !== "project_logs") {
+                filters.push(`resource.type="${params.serviceId}"`);
+            }
 
             // Deployment-specific filters based on service type
-            if (params.deploymentId) {
+            if (params.deploymentId && params.serviceId !== "project_logs") {
                 switch (params.serviceId) {
                     case "cloud_run_revision":
                         // For Cloud Run, use service_name and location from deployment data
@@ -102,54 +111,56 @@ export const useLogService = () => {
                         } else {
                             filters.push(`resource.labels.function_name="${params.deploymentId}"`);
                         }
-                        if (params.deploymentData?.region) {
-                            filters.push(`resource.labels.region="${params.deploymentData.region}"`);
-                        }
                         break;
                     default:
                         // Generic deployment filter
                         filters.push(`resource.labels.deployment_id="${params.deploymentId}"`);
+                        break;
                 }
             }
+        }
 
+        // Add additional filters from the filters object
+        if (params.filters) {
             // Severity filter
-            if (params.filters?.severity && params.filters.severity.length > 0) {
-                const severityFilter = params.filters.severity
-                    .map(s => `severity="${s}"`)
-                    .join(" OR ");
+            if (params.filters.severity && params.filters.severity.length > 0) {
+                const severityFilter = params.filters.severity.map(s => `severity="${s}"`).join(' OR ');
                 filters.push(`(${severityFilter})`);
             }
 
-            // Resource type filter
-            if (params.filters?.resourceType) {
-                filters.push(`resource.type="${params.filters.resourceType}"`);
+            // Custom query filter
+            if (params.filters.customQuery) {
+                filters.push(params.filters.customQuery);
             }
 
-            // Search query filter
-            if (params.searchQuery) {
-                filters.push(`textPayload:"${params.searchQuery}"`);
-            }
-        } else {
-            filters.push(baseFilter);
-        }
-        // Always append global search and time filters if present and valid
-        if (params.filters?.customQuery && params.filters.customQuery.trim()) {
-            filters.push(`(${params.filters.customQuery.trim()})`);
-        }
-        if (params.filters?.customStartTime) {
-            const d = new Date(params.filters.customStartTime);
-            if (!isNaN(d.getTime())) {
-                filters.push(`timestamp>="${d.toISOString()}"`);
+            // Time range filter (if custom start/end times are provided)
+            if (params.filters.customStartTime && params.filters.customEndTime) {
+                // Convert datetime-local format to RFC 3339 format for GCP
+                const startTime = new Date(params.filters.customStartTime).toISOString();
+                const endTime = new Date(params.filters.customEndTime).toISOString();
+                filters.push(`timestamp>="${startTime}" AND timestamp<="${endTime}"`);
             }
         }
-        if (params.filters?.customEndTime) {
-            const d = new Date(params.filters.customEndTime);
-            if (!isNaN(d.getTime())) {
-                filters.push(`timestamp<="${d.toISOString()}"`);
-            }
+
+        // Combine all filters
+        const finalFilter = filters.length > 0 ? filters.join(' AND ') : "";
+
+        // Debug logging for time filters
+        if (params.filters?.customStartTime && params.filters?.customEndTime) {
+            console.log("Time filter debug:", {
+                customStartTime: params.filters.customStartTime,
+                customEndTime: params.filters.customEndTime,
+                startTime: new Date(params.filters.customStartTime).toISOString(),
+                endTime: new Date(params.filters.customEndTime).toISOString(),
+                finalFilter
+            });
         }
-        // Remove any empty or invalid filter parts
-        return filters.filter(Boolean).join(" AND ");
+
+        if (params.serviceId === "project_logs") {
+            console.log("Final filter for project_logs:", finalFilter || "No filters applied (all logs)");
+        }
+
+        return finalFilter;
     };
 
     const fetchLogs = async (params: LogQueryParams): Promise<LogResponse> => {

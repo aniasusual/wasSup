@@ -20,10 +20,22 @@ interface LogTabsProps {
 }
 
 const getServiceIcon = (serviceId: string) => {
+  if (serviceId === "project_logs") {
+    return (
+      <div className="w-5 h-5 bg-green-600/20 rounded flex items-center justify-center">
+        <span className="text-green-400 text-xs">☁️</span>
+      </div>
+    );
+  }
   return null;
 };
 
 const getTabTitle = (tab: LogTab) => {
+  // Special handling for project logs
+  if (tab.serviceId === "project_logs") {
+    return "Project Logs";
+  }
+
   // Use the resourceType from filters if available, otherwise fall back to serviceId
   const resourceType = tab.filters?.resourceType || tab.serviceId;
   const svc =
@@ -133,7 +145,11 @@ export const LogTabs = ({
                 onClick={() => onTabSelect(tab.id)}
                 className={`group relative flex items-center gap-2 px-4 py-3 cursor-pointer min-w-[180px] flex-shrink-0 transition-all duration-300 select-none
                   ${
-                    tab.type === "insight"
+                    tab.serviceId === "project_logs"
+                      ? tab.id === activeTabId
+                        ? "bg-gradient-to-b from-green-800 to-green-900 text-white border-t-2 border-green-500 shadow-xl"
+                        : "bg-green-900/30 text-green-200 hover:bg-green-800/40 hover:text-white border-t-2 border-transparent hover:border-green-600/70"
+                      : tab.type === "insight"
                       ? tab.id === activeTabId
                         ? "bg-gradient-to-b from-purple-800 to-purple-900 text-white border-t-2 border-purple-500 shadow-xl"
                         : "bg-purple-900/30 text-purple-200 hover:bg-purple-800/40 hover:text-white border-t-2 border-transparent hover:border-purple-600/70"
@@ -162,7 +178,11 @@ export const LogTabs = ({
                 {/* Tab background overlay */}
                 <div
                   className={`absolute inset-0 ${
-                    tab.type === "insight"
+                    tab.serviceId === "project_logs"
+                      ? tab.id === activeTabId
+                        ? "bg-gradient-to-b from-green-500/10 to-transparent"
+                        : "bg-gradient-to-b from-green-700/10 to-transparent"
+                      : tab.type === "insight"
                       ? tab.id === activeTabId
                         ? "bg-gradient-to-b from-purple-500/10 to-transparent"
                         : "bg-gradient-to-b from-purple-700/10 to-transparent"
@@ -179,6 +199,7 @@ export const LogTabs = ({
                   <div className="flex items-center gap-2 min-w-0">
                     {getServiceIcon(tab.serviceId)}
                     <span className="truncate max-w-[100px] text-sm font-semibold tracking-tight">
+                      {tab.serviceId === "project_logs" ? "☁️ " : ""}
                       {getTabTitle(tab)}
                     </span>
                   </div>

@@ -1,5 +1,14 @@
 import { useState, useRef, useEffect } from "react";
-import { MessageSquare, Send, Bot, User, History, Trash2 } from "lucide-react";
+import {
+  MessageSquare,
+  Send,
+  Bot,
+  User,
+  History,
+  Trash2,
+  Wrench,
+  Database,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/Auth";
 import axios from "axios";
@@ -9,8 +18,11 @@ type Message = {
   text: string;
   sender: "user" | "ai";
   timestamp: string;
-  relevantLogs?: any[];
-  investigationPlan?: any;
+  toolResults?: any;
+  actions?: any[];
+  needsClarification?: boolean;
+  isStreaming?: boolean;
+  streamingStep?: string;
 };
 
 type Session = {
@@ -26,11 +38,6 @@ export const Chatbot = ({
   selectedServices = [],
   projectId = "",
   onOpenInsight,
-  openTabs = [],
-  activeTabId = "",
-  tabLogs = {},
-  pendingSearch = { searchQuery: "", startDate: "", endDate: "" },
-  logCount = 100,
 }: any) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState<string>("");
@@ -80,7 +87,9 @@ export const Chatbot = ({
           text: msg.content,
           sender: msg.role === "user" ? "user" : "ai",
           timestamp: new Date(msg.timestamp).toLocaleTimeString(),
-          relevantLogs: msg.metadata?.relevantLogs || [],
+          toolResults: msg.metadata?.toolResults || null,
+          actions: msg.metadata?.actions || [],
+          needsClarification: msg.metadata?.needsClarification || false,
         })
       );
 
@@ -136,78 +145,153 @@ export const Chatbot = ({
     setIsTyping(true);
     setSending(true);
 
-    try {
-      // Prepare tab context for the agent
-      const tabContext = {
-        openTabs: openTabs.map((tab: any) => ({
-          id: tab.id,
-          title: tab.title,
-          serviceId: tab.serviceId,
-          filters: tab.filters,
-          query: tab.query,
-          type: tab.type,
-          logCount: tabLogs[tab.id]?.length || 0,
-        })),
-        activeTabId,
-        globalFilters: {
-          searchQuery: pendingSearch.searchQuery,
-          startDate: pendingSearch.startDate,
-          endDate: pendingSearch.endDate,
-          logCount,
-        },
-      };
+    // Create a streaming AI response message
+    const streamingMessageId = Date.now() + 1;
+    const streamingMessage: Message = {
+      id: streamingMessageId,
+      text: "🔄 Starting intelligent analysis...",
+      sender: "ai",
+      timestamp: new Date().toLocaleTimeString(),
+      toolResults: null,
+      actions: [],
+      needsClarification: false,
+      isStreaming: true,
+      streamingStep: "initialization",
+    };
 
-      const response = await axios.post(
-        "/api/v1/agent/query",
-        {
+    setMessages((prev: Message[]) => [...prev, streamingMessage]);
+
+    try {
+      // Use the streaming endpoint
+      const response = await fetch("/api/v1/agent/query/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
           question: input,
           projectId,
-          sessionId: currentSessionId, // Include session ID for context
+          sessionId: currentSessionId,
           services: selectedServices,
-          tabContext, // Send tab context to the agent
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+        }),
+      });
 
-      const data = response.data;
-
-      // Store the session ID if this is a new session
-      if (data.sessionId && !currentSessionId) {
-        setCurrentSessionId(data.sessionId);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const aiResponse: Message = {
-        id: Date.now() + 1,
-        text: data.analysis || "",
-        sender: "ai",
-        timestamp: new Date().toLocaleTimeString(),
-        relevantLogs: data.relevantLogs || [],
-        investigationPlan: data.investigationPlan || null,
-      };
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("No response body reader available");
+      }
 
-      setMessages((prev: Message[]) => [...prev, aiResponse]);
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalResult: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep the last incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6)); // Remove "data: " prefix
+
+              switch (data.type) {
+                case "status":
+                  // Update the streaming message with status
+                  setMessages((prev: Message[]) =>
+                    prev.map((msg) =>
+                      msg.id === streamingMessageId
+                        ? {
+                            ...msg,
+                            text: `🔄 ${data.message}`,
+                            streamingStep: data.step,
+                          }
+                        : msg
+                    )
+                  );
+                  break;
+
+                case "result":
+                  // Final result received
+                  finalResult = data.data;
+                  setMessages((prev: Message[]) =>
+                    prev.map((msg) =>
+                      msg.id === streamingMessageId
+                        ? {
+                            ...msg,
+                            text: finalResult.analysis || "",
+                            toolResults: finalResult.toolResults || null,
+                            actions: finalResult.actions || [],
+                            needsClarification:
+                              finalResult.needsClarification || false,
+                            isStreaming: false,
+                            streamingStep: "complete",
+                          }
+                        : msg
+                    )
+                  );
+                  break;
+
+                case "error":
+                  // Error occurred
+                  setMessages((prev: Message[]) =>
+                    prev.map((msg) =>
+                      msg.id === streamingMessageId
+                        ? {
+                            ...msg,
+                            text: `❌ Error: ${data.message}`,
+                            isStreaming: false,
+                            streamingStep: "error",
+                          }
+                        : msg
+                    )
+                  );
+                  toast.error(`Streaming error: ${data.message}`);
+                  break;
+              }
+            } catch (parseError) {
+              console.warn("Failed to parse streaming data:", parseError);
+            }
+          }
+        }
+      }
+
+      // Store the session ID if this is a new session
+      if (finalResult?.sessionId && !currentSessionId) {
+        setCurrentSessionId(finalResult.sessionId);
+      }
 
       // Reload sessions to get updated context
       await loadUserSessions();
     } catch (error: any) {
       console.error("Error generating AI response:", error);
       let errorMessage = "Failed to generate AI response";
-      if (error.response?.data?.detail) {
-        errorMessage = `AI response error: ${error.response.data.detail}`;
-      } else if (error.response?.status) {
-        errorMessage = `AI response error: ${error.response.status} - ${
-          error.response.statusText || "Unknown error"
-        }`;
-      } else if (error.message) {
+      if (error.message) {
         errorMessage = `Network error: ${error.message}`;
-      } else {
-        errorMessage = `Unknown error: ${String(error)}`;
       }
+
+      // Update the streaming message with error
+      setMessages((prev: Message[]) =>
+        prev.map((msg) =>
+          msg.id === streamingMessageId
+            ? {
+                ...msg,
+                text: `❌ ${errorMessage}`,
+                isStreaming: false,
+                streamingStep: "error",
+              }
+            : msg
+        )
+      );
+
       toast.error(errorMessage);
     } finally {
       setIsTyping(false);
@@ -229,13 +313,211 @@ export const Chatbot = ({
     }
   }, [messages, isTyping]);
 
+  const renderToolResults = (toolResults: any) => {
+    if (!toolResults) return null;
+
+    return (
+      <div className="mt-3 space-y-3">
+        {/* User Parameters */}
+        {toolResults.user_parameters && (
+          <div className="p-3 bg-blue-950/40 border border-blue-800/50 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <Database className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-medium text-blue-400">
+                Search Parameters Used
+              </span>
+            </div>
+            <div className="text-xs text-blue-300 space-y-1">
+              {toolResults.user_parameters.search_query && (
+                <div>Query: {toolResults.user_parameters.search_query}</div>
+              )}
+              {toolResults.user_parameters.resource_filters[
+                "resource.type"
+              ] && (
+                <div>
+                  Services:{" "}
+                  {toolResults.user_parameters.resource_filters[
+                    "resource.type"
+                  ].join(", ")}
+                </div>
+              )}
+              {toolResults.user_parameters.severity_filters &&
+                toolResults.user_parameters.severity_filters.length > 0 && (
+                  <div>
+                    Severity:{" "}
+                    {toolResults.user_parameters.severity_filters.join(", ")}
+                  </div>
+                )}
+              {toolResults.user_parameters.time_range &&
+                (toolResults.user_parameters.time_range.start_time ||
+                  toolResults.user_parameters.time_range.end_time) && (
+                  <div>
+                    Time:{" "}
+                    {toolResults.user_parameters.time_range.start_time || "any"}{" "}
+                    to{" "}
+                    {toolResults.user_parameters.time_range.end_time || "now"}
+                  </div>
+                )}
+            </div>
+          </div>
+        )}
+
+        {/* Fetched Logs */}
+        {toolResults.fetched_logs && (
+          <div className="p-3 bg-green-950/40 border border-green-800/50 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <Wrench className="w-4 h-4 text-green-400" />
+              <span className="text-sm font-medium text-green-400">
+                Logs Fetched
+              </span>
+            </div>
+            <div className="text-xs text-green-300">
+              <div>Total logs: {toolResults.fetched_logs.total_fetched}</div>
+              <div>
+                Filter applied: {toolResults.fetched_logs.filter_applied}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Log Analysis */}
+        {toolResults.log_analysis && (
+          <div className="p-3 bg-purple-950/40 border border-purple-800/50 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <Wrench className="w-4 h-4 text-purple-400" />
+              <span className="text-sm font-medium text-purple-400">
+                Log Analysis Results
+              </span>
+            </div>
+            <div className="text-xs text-purple-300 space-y-1">
+              <div>Focus: {toolResults.log_analysis.analysis_focus}</div>
+              <div>
+                Total logs analyzed: {toolResults.log_analysis.total_logs}
+              </div>
+              {toolResults.log_analysis.severity_distribution && (
+                <div>
+                  Severity:{" "}
+                  {Object.entries(
+                    toolResults.log_analysis.severity_distribution
+                  )
+                    .map(([sev, count]) => `${sev}:${count}`)
+                    .join(", ")}
+                </div>
+              )}
+              {toolResults.log_analysis.key_insights && (
+                <div>
+                  Key insights: {toolResults.log_analysis.key_insights.length}{" "}
+                  found
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderActions = (actions: any[]) => {
+    if (!actions || actions.length === 0) return null;
+
+    return (
+      <div className="mt-3 space-y-2">
+        <div className="text-xs text-gray-400 font-medium">
+          Suggested Actions:
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {actions.map((action, index) => (
+            <button
+              key={index}
+              className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-xs rounded-lg border border-blue-700/50 hover:border-blue-600/70 transition-all duration-200"
+              onClick={() => {
+                // Handle action clicks
+                console.log("Action clicked:", action);
+                toast.success(`Action: ${action.label}`);
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderStreamingProgress = (message: Message) => {
+    if (!message.isStreaming) return null;
+
+    const getStepIcon = (step: string) => {
+      switch (step) {
+        case "initialization":
+          return "🚀";
+        case "intelligent_analysis":
+          return "🧠";
+        case "context_retrieval":
+          return "🔍";
+        case "log_fetching":
+          return "📡";
+        case "log_analysis":
+          return "🤖";
+        case "action_generation":
+          return "⚡";
+        case "completion":
+          return "✅";
+        default:
+          return "🔄";
+      }
+    };
+
+    const getStepDescription = (step: string) => {
+      switch (step) {
+        case "initialization":
+          return "Initializing analysis...";
+        case "intelligent_analysis":
+          return "Analyzing your query...";
+        case "context_retrieval":
+          return "Discovering GCP resources...";
+        case "log_fetching":
+          return "Fetching logs from GCP...";
+        case "log_analysis":
+          return "AI analyzing logs...";
+        case "action_generation":
+          return "Generating suggestions...";
+        case "completion":
+          return "Finalizing results...";
+        default:
+          return "Processing...";
+      }
+    };
+
+    return (
+      <div className="mt-2 p-2 bg-blue-950/30 border border-blue-800/50 rounded-lg">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <span className="text-sm">
+              {getStepIcon(message.streamingStep || "processing")}
+            </span>
+            <span className="text-xs text-blue-300 font-medium">
+              {getStepDescription(message.streamingStep || "processing")}
+            </span>
+          </div>
+          <div className="flex-1 h-1 bg-blue-900/50 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500 rounded-full animate-pulse"
+              style={{ width: "60%" }}
+            ></div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-800 px-4 py-3">
         <div className="flex items-center justify-between">
           <h3 className="text-white font-semibold flex items-center gap-2">
             <Bot className="w-5 h-5 text-blue-400" />
-            AI Assistant
+            AI Agent (Real-Time Streaming)
           </h3>
           <div className="flex items-center gap-2">
             <button
@@ -323,10 +605,31 @@ export const Chatbot = ({
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-8">
             <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-700" />
-            <p className="text-sm">Ask me about your logs!</p>
+            <p className="text-sm">Ask me about your GCP logs!</p>
             <p className="text-xs mt-2">
-              Try: "Show me all errors in the last hour"
+              I'll help you fetch and analyze logs with real-time streaming
+              updates
             </p>
+            <p className="text-xs mt-1">
+              Try: "Show me authentication errors from Cloud Run services in the
+              last hour" or "Find performance issues in my GCE instances"
+            </p>
+            <div className="mt-3 p-3 bg-gray-800/40 rounded-lg border border-gray-700/50">
+              <p className="text-xs text-gray-400 font-medium mb-2">
+                Example patterns:
+              </p>
+              <div className="text-xs text-gray-500 space-y-1">
+                <div>
+                  • "Show me [search terms] from [services] in [time range]"
+                </div>
+                <div>
+                  • "Find [severity] logs for [services] containing [keywords]"
+                </div>
+                <div>
+                  • "Check [services] for [issues] between [start] and [end]"
+                </div>
+              </div>
+            </div>
             {currentSessionId && (
               <p className="text-xs mt-1 text-blue-400">
                 Continuing conversation session
@@ -363,33 +666,31 @@ export const Chatbot = ({
                   {message.text}
                 </p>
 
-                {/* Investigation Plan Indicator */}
-                {message.investigationPlan && (
-                  <div className="mt-2 p-2 bg-blue-950/40 border border-blue-800/50 rounded-lg">
+                {/* Clarification Needed Indicator */}
+                {message.needsClarification && (
+                  <div className="mt-2 p-2 bg-yellow-950/40 border border-yellow-800/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                      <span className="text-xs text-blue-400 font-medium">
-                        Investigation Plan
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                      <span className="text-xs text-yellow-400 font-medium">
+                        Clarification Needed
                       </span>
                     </div>
-                    <div className="text-xs text-blue-300">
-                      <div>
-                        <strong>Approach:</strong>{" "}
-                        {message.investigationPlan.approach}
-                      </div>
-                      <div>
-                        <strong>Reason:</strong>{" "}
-                        {message.investigationPlan.reason}
-                      </div>
-                      {message.investigationPlan.suggested_question && (
-                        <div className="mt-1 text-blue-200">
-                          <strong>Question:</strong>{" "}
-                          {message.investigationPlan.suggested_question}
-                        </div>
-                      )}
+                    <div className="text-xs text-yellow-300">
+                      Please provide the missing information so I can help you
+                      fetch the right logs.
                     </div>
                   </div>
                 )}
+
+                {/* Streaming Progress */}
+                {renderStreamingProgress(message)}
+
+                {/* Tool Results */}
+                {message.toolResults && renderToolResults(message.toolResults)}
+
+                {/* Actions */}
+                {message.actions && renderActions(message.actions)}
+
                 <p
                   className={`text-[10px] mt-1 ${
                     message.sender === "user"
@@ -399,102 +700,6 @@ export const Chatbot = ({
                 >
                   {message.timestamp}
                 </p>
-                {message.sender === "ai" &&
-                  message.relevantLogs &&
-                  message.relevantLogs.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
-                        <p className="text-xs text-purple-400 font-medium">
-                          AI-Recommended Logs
-                        </p>
-                        <span className="text-xs text-gray-500">
-                          ({message.relevantLogs.length} found)
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2">
-                        {message.relevantLogs
-                          .slice(0, 8)
-                          .map((log: any, index: number) => (
-                            <button
-                              key={log.id}
-                              className="group text-left p-3 rounded-lg bg-gradient-to-r from-purple-950/40 to-blue-950/40 hover:from-purple-900/60 hover:to-blue-900/60 border border-purple-800/50 hover:border-purple-600/70 transition-all duration-200 relative overflow-hidden"
-                              onClick={() =>
-                                onOpenInsight &&
-                                onOpenInsight({
-                                  sourceMessageId: message.id,
-                                  log,
-                                })
-                              }
-                              title="Open in AI Insight tab"
-                            >
-                              {/* Glow effect on hover */}
-                              <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 to-blue-500/0 group-hover:from-purple-500/10 group-hover:to-blue-500/10 transition-all duration-300"></div>
-
-                              <div className="relative z-10">
-                                <div className="flex items-center justify-between gap-2 mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className={`px-2 py-1 rounded-full text-[10px] font-semibold ${
-                                        (log.severity || "INFO") === "ERROR"
-                                          ? "bg-red-600 text-white shadow-lg"
-                                          : (log.severity || "INFO") ===
-                                            "WARNING"
-                                          ? "bg-yellow-600 text-white shadow-lg"
-                                          : (log.severity || "INFO") === "INFO"
-                                          ? "bg-blue-600 text-white shadow-lg"
-                                          : "bg-gray-600 text-white shadow-lg"
-                                      }`}
-                                    >
-                                      {log.severity || "INFO"}
-                                    </span>
-                                    {log.serviceId && (
-                                      <span className="text-purple-300 text-xs font-medium bg-purple-900/40 px-2 py-1 rounded">
-                                        {log.serviceId}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-gray-400 text-xs">
-                                      {log.timestamp}
-                                    </span>
-                                    {log.score && (
-                                      <span className="text-purple-400 text-xs bg-purple-900/40 px-1.5 py-0.5 rounded">
-                                        {Math.round(log.score * 100)}% match
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="text-gray-200 text-sm line-clamp-2 group-hover:text-white transition-colors">
-                                  {log.messageSnippet}
-                                </div>
-                                {log.traceId && (
-                                  <div className="mt-2 flex items-center gap-1">
-                                    <span className="text-purple-400 text-xs">
-                                      🔗 Trace:
-                                    </span>
-                                    <span className="text-gray-400 text-xs font-mono">
-                                      {log.traceId.slice(0, 8)}...
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Click indicator */}
-                              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="w-2 h-2 bg-purple-400 rounded-full animate-ping"></div>
-                              </div>
-                            </button>
-                          ))}
-                      </div>
-                      {message.relevantLogs.length > 8 && (
-                        <p className="text-xs text-gray-500 text-center">
-                          Showing top 8 of {message.relevantLogs.length}{" "}
-                          relevant logs
-                        </p>
-                      )}
-                    </div>
-                  )}
               </div>
             </div>
           </div>
@@ -524,7 +729,9 @@ export const Chatbot = ({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              sending ? "Analyzing…" : "Ask about your logs… (Enter to send)"
+              sending
+                ? "AI is analyzing..."
+                : "Specify search query, services, time range, and severity... (Enter to send)"
             }
             className="flex-1 px-2 py-2 bg-transparent text-white placeholder-gray-500 focus:outline-none"
             disabled={sending}

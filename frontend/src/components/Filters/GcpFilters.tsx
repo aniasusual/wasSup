@@ -1,18 +1,6 @@
 import React from "react";
 import { GCPServiceSelector } from "../GCPServiceSelector";
 import { GCPProjectSelector } from "../GCPProjectSelector";
-// import { DeploymentSelector } from "../DeploymentSelector";
-// import type { GCPService, DeploymentInfo } from "../../types/gcp";
-
-// interface GcpFiltersProps {
-//   selectedProject: string;
-//   setSelectedProject: (project: string) => void;
-//   projects: any[];
-//   selectedService: GCPService | undefined;
-//   onServiceSelect: (service: GCPService) => void;
-//   selectedDeployment: DeploymentInfo | undefined;
-//   onDeploymentSelect: (deployment: DeploymentInfo) => void;
-// }
 
 const GcpFilters: React.FC<any> = ({
   selectedProject,
@@ -20,8 +8,6 @@ const GcpFilters: React.FC<any> = ({
   projects,
   selectedService,
   onServiceSelect,
-  // selectedDeployment,
-  // onDeploymentSelect,
 }) => {
   return (
     <div>
