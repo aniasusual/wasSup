@@ -54,7 +54,11 @@ export const useLogService = () => {
             // For project logs, we don't add any resource type filters, allowing all logs
         }
 
-        if (!baseFilter) {
+        // If we have a base filter from query builder, use it as the primary filter
+        if (baseFilter) {
+            filters.push(baseFilter);
+        } else {
+            // Only build resource type and deployment filters if no base filter is provided
             // Base resource type filter - skip for project_logs
             if (params.serviceId !== "project_logs") {
                 filters.push(`resource.type="${params.serviceId}"`);
@@ -122,19 +126,19 @@ export const useLogService = () => {
 
         // Add additional filters from the filters object
         if (params.filters) {
-            // Severity filter
-            if (params.filters.severity && params.filters.severity.length > 0) {
+            // Only add severity filter if not already present in base filter
+            if (params.filters.severity && params.filters.severity.length > 0 && !baseFilter.includes('severity')) {
                 const severityFilter = params.filters.severity.map(s => `severity="${s}"`).join(' OR ');
                 filters.push(`(${severityFilter})`);
             }
 
-            // Custom query filter
-            if (params.filters.customQuery) {
+            // Add global search query if provided and not already in base filter
+            if (params.filters.customQuery && !baseFilter.includes(params.filters.customQuery)) {
                 filters.push(params.filters.customQuery);
             }
 
-            // Time range filter (if custom start/end times are provided)
-            if (params.filters.customStartTime && params.filters.customEndTime) {
+            // Time range filter (if custom start/end times are provided and not already in base filter)
+            if (params.filters.customStartTime && params.filters.customEndTime && !baseFilter.includes('timestamp')) {
                 // Convert datetime-local format to RFC 3339 format for GCP
                 const startTime = new Date(params.filters.customStartTime).toISOString();
                 const endTime = new Date(params.filters.customEndTime).toISOString();
@@ -144,6 +148,18 @@ export const useLogService = () => {
 
         // Combine all filters
         const finalFilter = filters.length > 0 ? filters.join(' AND ') : "";
+
+        // Debug logging for filter building
+        console.log("Filter building debug:", {
+            baseFilter: baseFilter,
+            hasBaseFilter: !!baseFilter,
+            serviceId: params.serviceId,
+            filters: filters,
+            finalFilter: finalFilter,
+            customQuery: params.filters?.customQuery,
+            customStartTime: params.filters?.customStartTime,
+            customEndTime: params.filters?.customEndTime
+        });
 
         // Debug logging for time filters
         if (params.filters?.customStartTime && params.filters?.customEndTime) {

@@ -309,19 +309,30 @@ export const Home = () => {
   // Handler for query submission from QueryBuilder
   const handleQuerySubmit = (query: string) => {
     if (!openQueryBuilderTabId) return;
-    setTabs((prev) =>
-      prev.map((tab) =>
+
+    // Update the tab with the new query and fetch logs
+    setTabs((prev) => {
+      const updatedTabs = prev.map((tab) =>
         tab.id === openQueryBuilderTabId
           ? { ...tab, query, lastUpdated: new Date() }
           : tab
-      )
-    );
+      );
+
+      // Find the updated tab and fetch logs for it
+      const updatedTab = updatedTabs.find(
+        (t) => t.id === openQueryBuilderTabId
+      );
+      if (updatedTab) {
+        // Use setTimeout to ensure state update is complete before fetching
+        setTimeout(() => {
+          fetchLogsForTab(updatedTab);
+        }, 0);
+      }
+
+      return updatedTabs;
+    });
+
     setOpenQueryBuilderTabId(null);
-    // Fetch logs for this tab after updating query
-    const tab = tabs.find((t) => t.id === openQueryBuilderTabId);
-    if (tab) {
-      fetchLogsForTab({ ...tab, query });
-    }
   };
 
   // Get the current tab for query builder
@@ -337,6 +348,18 @@ export const Home = () => {
   const fetchLogsForTab = async (tab: LogTab) => {
     if (!selectedProvider || !selectedProject || !tab) return;
     setIsLoading(true);
+
+    console.log("fetchLogsForTab called with:", {
+      tabId: tab.id,
+      tabQuery: tab.query,
+      resourceType: tab.filters.resourceType,
+      pendingSearch: {
+        searchQuery: pendingSearch.searchQuery,
+        startDate: pendingSearch.startDate,
+        endDate: pendingSearch.endDate,
+      },
+    });
+
     try {
       const res = await fetchLogs({
         projectId: selectedProject,
