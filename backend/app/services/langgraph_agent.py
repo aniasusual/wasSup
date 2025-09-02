@@ -18,7 +18,7 @@ from langgraph.graph import StateGraph, END
 from .conversation_manager import conversation_manager, Message
 from .gcp_log_fetcher import GCPLogFetcher
 from .gcp_resource_discovery import GCPResourceDiscovery
-from .vector_store import QdrantVectorStore
+
 
 
 class AgentState(TypedDict):
@@ -550,7 +550,7 @@ class SmartLangGraphAgent:
         
         self.gcp_log_fetcher = GCPLogFetcher()
         self.gcp_resource_discovery = GCPResourceDiscovery()
-        self.vector_store = QdrantVectorStore()
+
         
         # Initialize the robust text parser
         self.robust_parser = RobustTextParser()
@@ -942,19 +942,26 @@ class SmartLangGraphAgent:
         # Extract search query from intent and question
         search_query = self._extract_search_query_robust(question, extracted_intent)
         
-        # Determine what's missing with confidence thresholds
+        # Determine what's missing - only time_range is required
         missing = []
         confidence_threshold = 0.7
         
-        if not services or (extracted_services and extracted_services[0]["confidence"] < confidence_threshold):
-            missing.append("services")
+        # Only time_range is required - services, severity, and search are optional
         if not time_range or (extracted_time_range and extracted_time_range.get("confidence", 0) < confidence_threshold):
             missing.append("time_range")
+        
+        # Services are optional - user can choose to analyze all services or specific ones
+        if not services or (extracted_services and extracted_services[0]["confidence"] < confidence_threshold):
+            missing.append("services")
+        
+        # Severity is optional - user can choose to filter by severity or not
         if not severity or (extracted_severities and extracted_severities[0]["confidence"] < confidence_threshold):
             missing.append("severity")
         
         # Check if we have enough context to proceed
-        has_minimal_context = len(services) > 0 and time_range is not None
+        # Only time_range is required - everything else is optional
+        has_minimal_context = time_range is not None
+        has_required_context = time_range is not None
         
         # Calculate overall confidence
         confidences = []
@@ -974,7 +981,8 @@ class SmartLangGraphAgent:
             "search_query": search_query,
             "missing": missing,
             "has_minimal_context": has_minimal_context,
-            "can_proceed": has_minimal_context or len(missing) <= 1,
+            "has_required_context": has_required_context,
+            "can_proceed": has_required_context,  # Only proceed if time_range is available
             "confidence": overall_confidence,
             "extraction_details": {
                 "services": extracted_services,
@@ -1061,7 +1069,7 @@ class SmartLangGraphAgent:
             if not merged["severity"] and conv_context.get("known_severity"):
                 merged["severity"] = conv_context["known_severity"]
         
-        # Re-evaluate what's missing
+        # Re-evaluate what's missing - only time_range is required
         missing = []
         if not merged["services"]:
             missing.append("services")
@@ -1072,12 +1080,12 @@ class SmartLangGraphAgent:
         
         merged["missing"] = missing
         
-        # Safe length checks with None handling
-        services_count = len(merged["services"]) if merged["services"] else 0
+        # Only time_range is required - services and severity are optional
         time_range_exists = merged["time_range"] is not None
         
-        merged["has_minimal_context"] = services_count > 0 and time_range_exists
-        merged["can_proceed"] = merged["has_minimal_context"] or len(missing) <= 1
+        merged["has_minimal_context"] = time_range_exists
+        merged["has_required_context"] = time_range_exists
+        merged["can_proceed"] = time_range_exists  # Only proceed if time_range is available
         
         return merged
     
@@ -1086,11 +1094,11 @@ class SmartLangGraphAgent:
         context = state["investigation_context"]
         
         if context.get("can_proceed", False):
-            if context.get("has_minimal_context", False):
-                return "proceed_with_analysis"
-            else:
-                return "proceed_with_partial"
+            # If we have the required time_range, proceed with analysis
+            # All other filters (services, severity, search) are optional
+            return "proceed_with_analysis"
         else:
+            # Only ask for clarification if time_range is missing
             return "need_minimal_clarification"
     
     async def _context_retrieval_node(self, state: AgentState) -> AgentState:
@@ -1111,12 +1119,14 @@ class SmartLangGraphAgent:
             # Build GCP Logging filter from parsed context
             filter_str = self._build_gcp_logging_filter(context, state["project_id"])
             
-            # Fetch logs using GCP Logging REST API (same as logs.py route)
+            # Fetch logs using GCP Logging REST API with comprehensive pagination
+            # For time-based queries, fetch ALL logs from the specified time range
             retrieved_logs = await self._fetch_logs_from_gcp(
                 project_id=state["project_id"],
                 filter_str=filter_str,
                 access_token=state["access_token"],
-                limit=state["limit"]
+                limit=state["limit"],
+                fetch_all=True  # Always fetch all logs for comprehensive analysis
             )
             
             # If no logs found, try fallback strategies
@@ -1130,11 +1140,13 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter(fallback_context, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (no severity): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
                 
                 # Fallback 2: Remove text search filter
@@ -1144,11 +1156,13 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter(fallback_context, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (no text search): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
                 
                 # Fallback 3: Use only resource type
@@ -1157,11 +1171,13 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter(fallback_context, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (services only): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
                 
                 # Fallback 4: Use default filter (last 7 days)
@@ -1169,15 +1185,19 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter({}, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (default): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
             
+            # Store both formatted logs for UI and complete logs for agent analysis
             state["relevant_logs"] = self._format_logs_for_ui(retrieved_logs)
-            state["investigation_context"]["retrieved_logs"] = retrieved_logs
+            state["investigation_context"]["retrieved_logs"] = retrieved_logs  # Complete log objects
+            state["investigation_context"]["complete_logs"] = retrieved_logs  # Alias for clarity
             state["investigation_context"]["filter_applied"] = filter_str
             state["current_step"] = InvestigationStep.CONTEXT_RETRIEVAL
             
@@ -1189,7 +1209,7 @@ class SmartLangGraphAgent:
         
         return state
     
-    async def _context_retrieval_node_streaming(self, state: AgentState, yield_updates: bool = False) -> AgentState:
+    async def _context_retrieval_node_streaming(self, state: AgentState, yield_updates: bool = False):
         """Retrieve relevant context and logs using GCP Logging API with streaming updates."""
         import json
         
@@ -1225,20 +1245,23 @@ class SmartLangGraphAgent:
             if yield_updates:
                 yield f"data: {json.dumps({'type': 'status', 'message': f'Filter: {filter_str[:100]}...', 'step': 'filter_built'})}\n\n"
             
-            # Fetch logs using GCP Logging REST API (same as logs.py route)
+            # Fetch logs using GCP Logging REST API with comprehensive pagination and streaming updates
             if yield_updates:
-                yield f"data: {json.dumps({'type': 'status', 'message': 'Fetching logs from GCP...', 'step': 'log_fetching'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Starting comprehensive log fetch from GCP...', 'step': 'log_fetching'})}\n\n"
             
-            retrieved_logs = await self._fetch_logs_from_gcp(
+            # Use the comprehensive fetch function (always fetches all logs)
+            retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                 project_id=state["project_id"],
                 filter_str=filter_str,
                 access_token=state["access_token"],
-                limit=state["limit"]
+                limit=state["limit"],
+                fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                yield_updates=False
             )
             
             if yield_updates:
                 logs_count = len(retrieved_logs)
-                yield f"data: {json.dumps({'type': 'status', 'message': f'Retrieved {logs_count} logs', 'step': 'log_fetching_complete'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Comprehensive fetch complete: {logs_count} total logs retrieved', 'step': 'log_fetching_complete'})}\n\n"
             
             # If no logs found, try fallback strategies
             if not retrieved_logs:
@@ -1257,11 +1280,13 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter(fallback_context, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (no severity): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
                 
                 # Fallback 2: Remove text search filter
@@ -1274,11 +1299,13 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter(fallback_context, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (no text search): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
                 
                 # Fallback 3: Use only resource type
@@ -1290,11 +1317,13 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter(fallback_context, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (services only): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
                 
                 # Fallback 4: Use default filter (last 7 days)
@@ -1305,19 +1334,23 @@ class SmartLangGraphAgent:
                     fallback_filter = self._build_gcp_logging_filter({}, state["project_id"])
                     print(f"🧠 Smart Agent: Trying fallback filter (default): {fallback_filter}")
                     
-                    retrieved_logs = await self._fetch_logs_from_gcp(
+                    retrieved_logs = await self._fetch_logs_from_gcp_streaming(
                         project_id=state["project_id"],
                         filter_str=fallback_filter,
                         access_token=state["access_token"],
-                        limit=state["limit"]
+                        limit=state["limit"],
+                        fetch_all=True,  # Always fetch all logs for comprehensive analysis
+                        yield_updates=False  # Non-streaming context retrieval
                     )
                 
                 if yield_updates:
                     fallback_logs_count = len(retrieved_logs)
                     yield f"data: {json.dumps({'type': 'status', 'message': f'Fallback complete: {fallback_logs_count} logs found', 'step': 'fallback_complete'})}\n\n"
             
+            # Store both formatted logs for UI and complete logs for agent analysis
             state["relevant_logs"] = self._format_logs_for_ui(retrieved_logs)
-            state["investigation_context"]["retrieved_logs"] = retrieved_logs
+            state["investigation_context"]["retrieved_logs"] = retrieved_logs  # Complete log objects
+            state["investigation_context"]["complete_logs"] = retrieved_logs  # Alias for clarity
             state["investigation_context"]["filter_applied"] = filter_str
             state["current_step"] = InvestigationStep.CONTEXT_RETRIEVAL
             
@@ -1339,19 +1372,36 @@ class SmartLangGraphAgent:
             yield f"data: {json.dumps({'type': 'state_update', 'state': state})}\n\n"
     
     def _build_gcp_logging_filter(self, context: Dict[str, Any], project_id: str) -> str:
-        """Build GCP Logging filter string from parsed context - matches logs.py format."""
+        """
+        Build GCP Logging filter string from parsed context - matches logs.py format.
+        Supports comprehensive filtering including services, severity, time ranges, and text search.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         filter_parts = []
         
         # Add resource type filter if services are specified
         if context.get("services"):
             service_filters = []
             for service in context["services"]:
-                service_filters.append(f'resource.type="{service}"')
+                # Handle both exact matches and wildcard patterns
+                if "*" in service:
+                    # Convert wildcard to GCP regex pattern
+                    regex_pattern = service.replace("*", ".*")
+                    service_filters.append(f'resource.type=~"{regex_pattern}"')
+                else:
+                    service_filters.append(f'resource.type="{service}"')
             
             if len(service_filters) == 1:
                 filter_parts.append(service_filters[0])
             else:
                 filter_parts.append(f"({' OR '.join(service_filters)})")
+            
+            logger.info(f"🧠 Smart Agent: Added service filters: {service_filters}")
+        else:
+            # No specific services mentioned - this is a cross-service analysis
+            logger.info(f"🧠 Smart Agent: No service filters specified - analyzing across ALL services")
         
         # Add severity filter if specified
         if context.get("severity"):
@@ -1363,6 +1413,8 @@ class SmartLangGraphAgent:
                 filter_parts.append(severity_filters[0])
             else:
                 filter_parts.append(f"({' OR '.join(severity_filters)})")
+            
+            logger.info(f"🧠 Smart Agent: Added severity filters: {severity_filters}")
         
         # Add time range filter if specified
         if context.get("time_range"):
@@ -1372,56 +1424,98 @@ class SmartLangGraphAgent:
             
             if start_time and end_time:
                 # Convert ISO format to RFC 3339 format for GCP Logging API
-                # GCP expects format like: 2024-01-01T00:00:00Z or 2024-01-01T00:00:00.000Z
                 def format_timestamp_for_gcp(ts):
                     if not ts:
                         return ts
                     
-                    # Remove microseconds if present and add .000Z
-                    if '.' in ts and 'Z' not in ts:
-                        # Keep only 3 digits of microseconds
-                        parts = ts.split('.')
-                        if len(parts) == 2:
-                            base_time = parts[0]
-                            microseconds = parts[1][:3]  # Truncate to 3 digits
-                            ts = f"{base_time}.{microseconds}Z"
-                    elif not ts.endswith('Z') and '+' not in ts:
-                        ts += 'Z'
+                    # Handle various timestamp formats
+                    if isinstance(ts, str):
+                        # Remove microseconds if present and add .000Z
+                        if '.' in ts and 'Z' not in ts:
+                            # Keep only 3 digits of microseconds
+                            parts = ts.split('.')
+                            if len(parts) == 2:
+                                base_time = parts[0]
+                                microseconds = parts[1][:3]  # Truncate to 3 digits
+                                ts = f"{base_time}.{microseconds}Z"
+                        elif not ts.endswith('Z') and '+' not in ts:
+                            ts += 'Z'
                     
                     return ts
                 
                 start_timestamp = format_timestamp_for_gcp(start_time)
                 end_timestamp = format_timestamp_for_gcp(end_time)
                 
-                filter_parts.append(f'timestamp>="{start_timestamp}" AND timestamp<="{end_timestamp}"')
+                if start_timestamp and end_timestamp:
+                    filter_parts.append(f'timestamp>="{start_timestamp}" AND timestamp<="{end_timestamp}"')
+                    logger.info(f"🧠 Smart Agent: Added time range filter: {start_timestamp} to {end_timestamp}")
         
         # Add text search filter if search query is available
         if context.get("search_query"):
             search_query = context["search_query"]
             # Escape quotes and wrap in textPayload search
             escaped_query = search_query.replace('"', '\\"')
-            filter_parts.append(f'textPayload:"{escaped_query}"')
+            
+            # Support both textPayload and jsonPayload searches
+            text_search_filters = [
+                f'textPayload:"{escaped_query}"',
+                f'jsonPayload.message:"{escaped_query}"'
+            ]
+            filter_parts.append(f"({' OR '.join(text_search_filters)})")
+            logger.info(f"🧠 Smart Agent: Added text search filter: {escaped_query}")
+        
+        # Add log name filter if specified
+        if context.get("log_name"):
+            log_name = context["log_name"]
+            filter_parts.append(f'logName="{log_name}"')
+            logger.info(f"🧠 Smart Agent: Added log name filter: {log_name}")
+        
+        # Add resource label filters if specified
+        if context.get("resource_labels"):
+            resource_labels = context["resource_labels"]
+            for label_key, label_value in resource_labels.items():
+                filter_parts.append(f'resource.labels.{label_key}="{label_value}"')
+            logger.info(f"🧠 Smart Agent: Added resource label filters: {resource_labels}")
+        
+        # Add custom label filters if specified
+        if context.get("labels"):
+            labels = context["labels"]
+            for label_key, label_value in labels.items():
+                filter_parts.append(f'labels.{label_key}="{label_value}"')
+            logger.info(f"🧠 Smart Agent: Added custom label filters: {labels}")
         
         # Combine all filters with AND
         if filter_parts:
-            return " AND ".join(filter_parts)
+            final_filter = " AND ".join(filter_parts)
+            logger.info(f"🧠 Smart Agent: Built GCP filter: {final_filter}")
+            return final_filter
         else:
             # Default filter for recent logs if no specific filters - use a broader time range
             from datetime import datetime, timedelta
             now = datetime.utcnow()
             week_ago = now - timedelta(days=7)
-            return f'timestamp>="{week_ago.isoformat()}Z"'
+            default_filter = f'timestamp>="{week_ago.isoformat()}Z"'
+            logger.info(f"🧠 Smart Agent: Using default filter: {default_filter}")
+            return default_filter
     
     async def _fetch_logs_from_gcp(
         self, 
         project_id: str, 
         filter_str: str, 
         access_token: str, 
-        limit: int = 100
+        limit: int = 100,
+        fetch_all: bool = True
     ) -> List[Dict[str, Any]]:
-        """Fetch logs from GCP Logging API using the exact same method as logs.py route."""
+        """
+        Fetch logs from GCP Logging API with comprehensive pagination support.
+        When fetch_all=True, retrieves ALL logs from the specified time range.
+        Preserves complete log object structure for variable log formats.
+        """
         import requests
         from concurrent.futures import ThreadPoolExecutor
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         def fetch_logs_sync():
             try:
@@ -1430,76 +1524,167 @@ class SmartLangGraphAgent:
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                 }
-                body = {
-                    "resourceNames": [f"projects/{project_id}"],
-                    "filter": filter_str,
-                    "orderBy": "timestamp desc",
-                    "pageSize": min(limit, 1000),  # Cap at 1000 for performance
-                }
                 
-                print(f"🧠 Smart Agent: Fetching logs with filter: {filter_str}")
-                print(f"🧠 Smart Agent: Request body: {body}")
+                all_logs = []
+                page_token = None
+                page_count = 0
+                max_pages = 50  # Safety limit to prevent infinite loops
+                page_size = 1000  # Maximum page size for GCP Logging API
                 
-                resp = requests.post(url, headers=headers, json=body, timeout=60)
-                print(f"🧠 Smart Agent: Response status: {resp.status_code}")
+                logger.info(f"🧠 Smart Agent: Starting comprehensive log fetch from GCP Logging API")
+                logger.info(f"🧠 Smart Agent: Project: {project_id}")
+                logger.info(f"🧠 Smart Agent: Filter: {filter_str}")
+                logger.info(f"🧠 Smart Agent: Fetch all: {fetch_all}")
+                logger.info(f"🧠 Smart Agent: Initial limit: {limit}")
                 
-                if not resp.ok:
-                    try:
-                        detail = resp.json()
-                    except Exception:
-                        detail = resp.text
-                    print(f"❌ Smart Agent: GCP API error response: {detail}")
-                    raise Exception(f"GCP API error {resp.status_code}: {str(detail)}")
-                
-                data = resp.json() or {}
-                entries = data.get("entries", [])
-                print(f"🧠 Smart Agent: Received {len(entries)} entries from GCP API")
-                
-                logs = []
-                for idx, entry in enumerate(entries):
-                    # Parse entry (exact same format as logs.py route)
-                    timestamp = entry.get("timestamp")
-                    severity = entry.get("severity", "DEFAULT")
-                    json_payload = entry.get("jsonPayload")
-                    text_payload = entry.get("textPayload")
-                    message = None
+                while page_count < max_pages:
+                    page_count += 1
                     
-                    if isinstance(json_payload, dict):
-                        message = json_payload.get("message") or str(json_payload)
-                    elif isinstance(text_payload, str):
-                        message = text_payload
-                    else:
-                        message = str(json_payload or text_payload or "")
+                    body = {
+                        "resourceNames": [f"projects/{project_id}"],
+                        "filter": filter_str,
+                        "orderBy": "timestamp desc",
+                        "pageSize": page_size,
+                    }
                     
-                    resource = entry.get("resource") or {}
-                    resource_type = resource.get("type", "") if isinstance(resource, dict) else ""
-                    resource_labels = resource.get("labels", {}) if isinstance(resource, dict) else {}
+                    if page_token:
+                        body["pageToken"] = page_token
                     
-                    logs.append({
-                        "id": entry.get("insertId") or f"entry_{idx}",
-                        "timestamp": timestamp,
-                        "severity": str(severity),
-                        "message": message,
-                        "resource": {
-                            "type": resource_type,
-                            "labels": dict(resource_labels) if isinstance(resource_labels, dict) else {},
-                        },
-                        "labels": dict(entry.get("labels", {})) if isinstance(entry.get("labels"), dict) else {},
-                        "jsonPayload": json_payload if isinstance(json_payload, dict) else None,
-                        "textPayload": text_payload if isinstance(text_payload, str) else None,
-                        "httpRequest": entry.get("httpRequest"),
-                        "traceId": entry.get("trace"),
-                        "spanId": entry.get("spanId"),
-                        "logName": entry.get("logName"),
-                        "projectId": project_id,
-                        "insertId": entry.get("insertId"),
-                    })
+                    logger.info(f"🧠 Smart Agent: Fetching page {page_count} (pageSize: {page_size})")
+                    if page_token:
+                        logger.info(f"🧠 Smart Agent: Using pageToken: {page_token[:50]}...")
+                    
+                    resp = requests.post(url, headers=headers, json=body, timeout=60)
+                    logger.info(f"🧠 Smart Agent: GCP API response status: {resp.status_code}")
+                    
+                    if not resp.ok:
+                        try:
+                            error_detail = resp.json()
+                            logger.error(f"❌ Smart Agent: GCP API error response: {error_detail}")
+                        except Exception:
+                            error_detail = resp.text
+                            logger.error(f"❌ Smart Agent: GCP API error text: {error_detail}")
+                        
+                        # Provide more specific error messages
+                        if resp.status_code == 401:
+                            raise Exception(f"Authentication failed - invalid or expired access token")
+                        elif resp.status_code == 403:
+                            raise Exception(f"Permission denied - insufficient permissions for project {project_id}")
+                        elif resp.status_code == 400:
+                            raise Exception(f"Bad request - invalid filter or parameters: {error_detail}")
+                        else:
+                            raise Exception(f"GCP API error {resp.status_code}: {str(error_detail)}")
+                    
+                    data = resp.json() or {}
+                    entries = data.get("entries", [])
+                    next_page_token = data.get("nextPageToken")
+                    
+                    logger.info(f"🧠 Smart Agent: Page {page_count} - Received {len(entries)} log entries")
+                    
+                    # Parse entries with complete structure preservation
+                    page_logs = []
+                    for idx, entry in enumerate(entries):
+                        try:
+                            # Extract all available fields from the log entry
+                            timestamp = entry.get("timestamp")
+                            severity = entry.get("severity", "DEFAULT")
+                            json_payload = entry.get("jsonPayload")
+                            text_payload = entry.get("textPayload")
+                            
+                            # Extract message from various payload types
+                            message = None
+                            if isinstance(json_payload, dict):
+                                message = json_payload.get("message") or json_payload.get("msg") or str(json_payload)
+                            elif isinstance(text_payload, str):
+                                message = text_payload
+                            else:
+                                message = str(json_payload or text_payload or "")
+                            
+                            # Extract resource information
+                            resource = entry.get("resource") or {}
+                            resource_type = resource.get("type", "") if isinstance(resource, dict) else ""
+                            resource_labels = resource.get("labels", {}) if isinstance(resource, dict) else {}
+                            
+                            # Build complete log object with all available fields
+                            log_entry = {
+                                # Core identification
+                                "id": entry.get("insertId") or f"entry_{len(all_logs) + idx}",
+                                "insertId": entry.get("insertId"),
+                                "timestamp": timestamp,
+                                "severity": str(severity),
+                                "message": message,
+                                
+                                # Resource information
+                                "resource": {
+                                    "type": resource_type,
+                                    "labels": dict(resource_labels) if isinstance(resource_labels, dict) else {},
+                                },
+                                
+                                # Log metadata
+                                "labels": dict(entry.get("labels", {})) if isinstance(entry.get("labels"), dict) else {},
+                                "logName": entry.get("logName"),
+                                "projectId": project_id,
+                                
+                                # Payload data (preserve original structure)
+                                "jsonPayload": json_payload if isinstance(json_payload, dict) else None,
+                                "textPayload": text_payload if isinstance(text_payload, str) else None,
+                                
+                                # Tracing and request information
+                                "httpRequest": entry.get("httpRequest"),
+                                "traceId": entry.get("trace") or entry.get("traceId"),
+                                "spanId": entry.get("spanId"),
+                                "operation": entry.get("operation"),
+                                
+                                # Additional fields that might be present
+                                "sourceLocation": entry.get("sourceLocation"),
+                                "metadata": entry.get("metadata"),
+                                "receiveTimestamp": entry.get("receiveTimestamp"),
+                                "protoPayload": entry.get("protoPayload"),
+                            }
+                            
+                            # Remove None values to keep the object clean
+                            log_entry = {k: v for k, v in log_entry.items() if v is not None}
+                            
+                            page_logs.append(log_entry)
+                            
+                        except Exception as parse_error:
+                            logger.warning(f"⚠️ Smart Agent: Failed to parse log entry {len(all_logs) + idx}: {str(parse_error)}")
+                            # Still include the raw entry for analysis
+                            page_logs.append({
+                                "id": f"raw_entry_{len(all_logs) + idx}",
+                                "timestamp": entry.get("timestamp"),
+                                "severity": entry.get("severity", "DEFAULT"),
+                                "message": f"Raw log entry (parse error: {str(parse_error)})",
+                                "rawEntry": entry,  # Include the complete raw entry
+                                "projectId": project_id,
+                            })
+                    
+                    all_logs.extend(page_logs)
+                    logger.info(f"🧠 Smart Agent: Total logs collected so far: {len(all_logs)}")
+                    
+                    # Check if we should continue fetching
+                    if not fetch_all:
+                        # If not fetching all, respect the limit
+                        if len(all_logs) >= limit:
+                            all_logs = all_logs[:limit]
+                            logger.info(f"🧠 Smart Agent: Reached limit of {limit} logs, stopping fetch")
+                            break
+                    
+                    # Check if there are more pages
+                    if not next_page_token:
+                        logger.info(f"🧠 Smart Agent: No more pages available, fetch complete")
+                        break
+                    
+                    page_token = next_page_token
                 
-                print(f"🧠 Smart Agent: Successfully fetched {len(logs)} logs from GCP")
-                return logs
+                if page_count >= max_pages:
+                    logger.warning(f"⚠️ Smart Agent: Reached maximum page limit ({max_pages}), stopping fetch")
+                
+                logger.info(f"🧠 Smart Agent: Comprehensive fetch complete - {len(all_logs)} total logs from {page_count} pages")
+                return all_logs
                 
             except Exception as e:
-                print(f"❌ Smart Agent: Error in fetch_logs_sync: {str(e)}")
+                logger.error(f"❌ Smart Agent: Error in fetch_logs_sync: {str(e)}")
                 raise e
         
         try:
@@ -1511,8 +1696,417 @@ class SmartLangGraphAgent:
             return result
             
         except Exception as e:
-            print(f"❌ Smart Agent: Error fetching logs from GCP: {str(e)}")
-            # Return empty list instead of raising to allow agent to continue
+            logger.error(f"❌ Smart Agent: Error fetching logs from GCP: {str(e)}")
+            # Return empty list instead of raising to allow agent to continue with graceful degradation
+            return []
+    
+    async def _fetch_logs_from_gcp_streaming(
+        self, 
+        project_id: str, 
+        filter_str: str, 
+        access_token: str, 
+        limit: int = 100,
+        fetch_all: bool = True,
+        yield_updates: bool = False
+    ):
+        """
+        Fetch logs from GCP Logging API with comprehensive pagination support and streaming updates.
+        When fetch_all=True, retrieves ALL logs from the specified time range.
+        Returns logs directly (not a generator) for compatibility.
+        """
+        import requests
+        from concurrent.futures import ThreadPoolExecutor
+        import logging
+        import json
+        
+        logger = logging.getLogger(__name__)
+        
+        def fetch_logs_sync():
+            try:
+                url = "https://logging.googleapis.com/v2/entries:list"
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                }
+                
+                all_logs = []
+                page_token = None
+                page_count = 0
+                max_pages = 50  # Safety limit to prevent infinite loops
+                page_size = 1000  # Maximum page size for GCP Logging API
+                
+                logger.info(f"🧠 Smart Agent: Starting comprehensive streaming log fetch from GCP Logging API")
+                logger.info(f"🧠 Smart Agent: Project: {project_id}")
+                logger.info(f"🧠 Smart Agent: Filter: {filter_str}")
+                logger.info(f"🧠 Smart Agent: Fetch all: {fetch_all}")
+                logger.info(f"🧠 Smart Agent: Initial limit: {limit}")
+                
+                while page_count < max_pages:
+                    page_count += 1
+                    
+                    body = {
+                        "resourceNames": [f"projects/{project_id}"],
+                        "filter": filter_str,
+                        "orderBy": "timestamp desc",
+                        "pageSize": page_size,
+                    }
+                    
+                    if page_token:
+                        body["pageToken"] = page_token
+                    
+                    logger.info(f"🧠 Smart Agent: Fetching page {page_count} (pageSize: {page_size})")
+                    if page_token:
+                        logger.info(f"🧠 Smart Agent: Using pageToken: {page_token[:50]}...")
+                    
+                    resp = requests.post(url, headers=headers, json=body, timeout=60)
+                    logger.info(f"🧠 Smart Agent: GCP API response status: {resp.status_code}")
+                    
+                    if not resp.ok:
+                        try:
+                            error_detail = resp.json()
+                            logger.error(f"❌ Smart Agent: GCP API error response: {error_detail}")
+                        except Exception:
+                            error_detail = resp.text
+                            logger.error(f"❌ Smart Agent: GCP API error text: {error_detail}")
+                        
+                        # Provide more specific error messages
+                        if resp.status_code == 401:
+                            raise Exception(f"Authentication failed - invalid or expired access token")
+                        elif resp.status_code == 403:
+                            raise Exception(f"Permission denied - insufficient permissions for project {project_id}")
+                        elif resp.status_code == 400:
+                            raise Exception(f"Bad request - invalid filter or parameters: {error_detail}")
+                        else:
+                            raise Exception(f"GCP API error {resp.status_code}: {str(error_detail)}")
+                    
+                    data = resp.json() or {}
+                    entries = data.get("entries", [])
+                    next_page_token = data.get("nextPageToken")
+                    
+                    logger.info(f"🧠 Smart Agent: Page {page_count} - Received {len(entries)} log entries")
+                    
+                    # Parse entries with complete structure preservation
+                    page_logs = []
+                    for idx, entry in enumerate(entries):
+                        try:
+                            # Extract all available fields from the log entry
+                            timestamp = entry.get("timestamp")
+                            severity = entry.get("severity", "DEFAULT")
+                            json_payload = entry.get("jsonPayload")
+                            text_payload = entry.get("textPayload")
+                            
+                            # Extract message from various payload types
+                            message = None
+                            if isinstance(json_payload, dict):
+                                message = json_payload.get("message") or json_payload.get("msg") or str(json_payload)
+                            elif isinstance(text_payload, str):
+                                message = text_payload
+                            else:
+                                message = str(json_payload or text_payload or "")
+                            
+                            # Extract resource information
+                            resource = entry.get("resource") or {}
+                            resource_type = resource.get("type", "") if isinstance(resource, dict) else ""
+                            resource_labels = resource.get("labels", {}) if isinstance(resource, dict) else {}
+                            
+                            # Build complete log object with all available fields
+                            log_entry = {
+                                # Core identification
+                                "id": entry.get("insertId") or f"entry_{len(all_logs) + idx}",
+                                "insertId": entry.get("insertId"),
+                                "timestamp": timestamp,
+                                "severity": str(severity),
+                                "message": message,
+                                
+                                # Resource information
+                                "resource": {
+                                    "type": resource_type,
+                                    "labels": dict(resource_labels) if isinstance(resource_labels, dict) else {},
+                                },
+                                
+                                # Log metadata
+                                "labels": dict(entry.get("labels", {})) if isinstance(entry.get("labels"), dict) else {},
+                                "logName": entry.get("logName"),
+                                "projectId": project_id,
+                                
+                                # Payload data (preserve original structure)
+                                "jsonPayload": json_payload if isinstance(json_payload, dict) else None,
+                                "textPayload": text_payload if isinstance(text_payload, str) else None,
+                                
+                                # Tracing and request information
+                                "httpRequest": entry.get("httpRequest"),
+                                "traceId": entry.get("trace") or entry.get("traceId"),
+                                "spanId": entry.get("spanId"),
+                                "operation": entry.get("operation"),
+                                
+                                # Additional fields that might be present
+                                "sourceLocation": entry.get("sourceLocation"),
+                                "metadata": entry.get("metadata"),
+                                "receiveTimestamp": entry.get("receiveTimestamp"),
+                                "protoPayload": entry.get("protoPayload"),
+                            }
+                            
+                            # Remove None values to keep the object clean
+                            log_entry = {k: v for k, v in log_entry.items() if v is not None}
+                            
+                            page_logs.append(log_entry)
+                            
+                        except Exception as parse_error:
+                            logger.warning(f"⚠️ Smart Agent: Failed to parse log entry {len(all_logs) + idx}: {str(parse_error)}")
+                            # Still include the raw entry for analysis
+                            page_logs.append({
+                                "id": f"raw_entry_{len(all_logs) + idx}",
+                                "timestamp": entry.get("timestamp"),
+                                "severity": entry.get("severity", "DEFAULT"),
+                                "message": f"Raw log entry (parse error: {str(parse_error)})",
+                                "rawEntry": entry,  # Include the complete raw entry
+                                "projectId": project_id,
+                            })
+                    
+                    all_logs.extend(page_logs)
+                    logger.info(f"🧠 Smart Agent: Total logs collected so far: {len(all_logs)}")
+                    
+                    # Check if we should continue fetching
+                    if not fetch_all:
+                        # If not fetching all, respect the limit
+                        if len(all_logs) >= limit:
+                            all_logs = all_logs[:limit]
+                            logger.info(f"🧠 Smart Agent: Reached limit of {limit} logs, stopping fetch")
+                            break
+                    
+                    # Check if there are more pages
+                    if not next_page_token:
+                        logger.info(f"🧠 Smart Agent: No more pages available, fetch complete")
+                        break
+                    
+                    page_token = next_page_token
+                
+                if page_count >= max_pages:
+                    logger.warning(f"⚠️ Smart Agent: Reached maximum page limit ({max_pages}), stopping fetch")
+                
+                logger.info(f"🧠 Smart Agent: Comprehensive streaming fetch complete - {len(all_logs)} total logs from {page_count} pages")
+                return all_logs
+                
+            except Exception as e:
+                logger.error(f"❌ Smart Agent: Error in fetch_logs_sync: {str(e)}")
+                raise e
+        
+        try:
+            # Run the synchronous GCP call in a thread pool to avoid blocking
+            with ThreadPoolExecutor() as executor:
+                result = await asyncio.get_event_loop().run_in_executor(
+                    executor, fetch_logs_sync
+                )
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Smart Agent: Error fetching logs from GCP: {str(e)}")
+            # Return empty list instead of raising to allow agent to continue with graceful degradation
+            return []
+    
+    async def _fetch_logs_from_gcp_with_streaming_updates(
+        self, 
+        project_id: str, 
+        filter_str: str, 
+        access_token: str, 
+        limit: int = 100,
+        fetch_all: bool = True
+    ):
+        """
+        Fetch logs from GCP Logging API with comprehensive pagination support and streaming updates.
+        This version yields progress updates during the fetch process.
+        """
+        import requests
+        from concurrent.futures import ThreadPoolExecutor
+        import logging
+        import json
+        
+        logger = logging.getLogger(__name__)
+        
+        def fetch_logs_sync():
+            try:
+                url = "https://logging.googleapis.com/v2/entries:list"
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                }
+                
+                all_logs = []
+                page_token = None
+                page_count = 0
+                max_pages = 50  # Safety limit to prevent infinite loops
+                page_size = 1000  # Maximum page size for GCP Logging API
+                
+                logger.info(f"🧠 Smart Agent: Starting comprehensive streaming log fetch from GCP Logging API")
+                logger.info(f"🧠 Smart Agent: Project: {project_id}")
+                logger.info(f"🧠 Smart Agent: Filter: {filter_str}")
+                logger.info(f"🧠 Smart Agent: Fetch all: {fetch_all}")
+                logger.info(f"🧠 Smart Agent: Initial limit: {limit}")
+                
+                while page_count < max_pages:
+                    page_count += 1
+                    
+                    body = {
+                        "resourceNames": [f"projects/{project_id}"],
+                        "filter": filter_str,
+                        "orderBy": "timestamp desc",
+                        "pageSize": page_size,
+                    }
+                    
+                    if page_token:
+                        body["pageToken"] = page_token
+                    
+                    logger.info(f"🧠 Smart Agent: Fetching page {page_count} (pageSize: {page_size})")
+                    if page_token:
+                        logger.info(f"🧠 Smart Agent: Using pageToken: {page_token[:50]}...")
+                    
+                    resp = requests.post(url, headers=headers, json=body, timeout=60)
+                    logger.info(f"🧠 Smart Agent: GCP API response status: {resp.status_code}")
+                    
+                    if not resp.ok:
+                        try:
+                            error_detail = resp.json()
+                            logger.error(f"❌ Smart Agent: GCP API error response: {error_detail}")
+                        except Exception:
+                            error_detail = resp.text
+                            logger.error(f"❌ Smart Agent: GCP API error text: {error_detail}")
+                        
+                        # Provide more specific error messages
+                        if resp.status_code == 401:
+                            raise Exception(f"Authentication failed - invalid or expired access token")
+                        elif resp.status_code == 403:
+                            raise Exception(f"Permission denied - insufficient permissions for project {project_id}")
+                        elif resp.status_code == 400:
+                            raise Exception(f"Bad request - invalid filter or parameters: {error_detail}")
+                        else:
+                            raise Exception(f"GCP API error {resp.status_code}: {str(error_detail)}")
+                    
+                    data = resp.json() or {}
+                    entries = data.get("entries", [])
+                    next_page_token = data.get("nextPageToken")
+                    
+                    logger.info(f"🧠 Smart Agent: Page {page_count} - Received {len(entries)} log entries")
+                    
+                    # Parse entries with complete structure preservation
+                    page_logs = []
+                    for idx, entry in enumerate(entries):
+                        try:
+                            # Extract all available fields from the log entry
+                            timestamp = entry.get("timestamp")
+                            severity = entry.get("severity", "DEFAULT")
+                            json_payload = entry.get("jsonPayload")
+                            text_payload = entry.get("textPayload")
+                            
+                            # Extract message from various payload types
+                            message = None
+                            if isinstance(json_payload, dict):
+                                message = json_payload.get("message") or json_payload.get("msg") or str(json_payload)
+                            elif isinstance(text_payload, str):
+                                message = text_payload
+                            else:
+                                message = str(json_payload or text_payload or "")
+                            
+                            # Extract resource information
+                            resource = entry.get("resource") or {}
+                            resource_type = resource.get("type", "") if isinstance(resource, dict) else ""
+                            resource_labels = resource.get("labels", {}) if isinstance(resource, dict) else {}
+                            
+                            # Build complete log object with all available fields
+                            log_entry = {
+                                # Core identification
+                                "id": entry.get("insertId") or f"entry_{len(all_logs) + idx}",
+                                "insertId": entry.get("insertId"),
+                                "timestamp": timestamp,
+                                "severity": str(severity),
+                                "message": message,
+                                
+                                # Resource information
+                                "resource": {
+                                    "type": resource_type,
+                                    "labels": dict(resource_labels) if isinstance(resource_labels, dict) else {},
+                                },
+                                
+                                # Log metadata
+                                "labels": dict(entry.get("labels", {})) if isinstance(entry.get("labels"), dict) else {},
+                                "logName": entry.get("logName"),
+                                "projectId": project_id,
+                                
+                                # Payload data (preserve original structure)
+                                "jsonPayload": json_payload if isinstance(json_payload, dict) else None,
+                                "textPayload": text_payload if isinstance(text_payload, str) else None,
+                                
+                                # Tracing and request information
+                                "httpRequest": entry.get("httpRequest"),
+                                "traceId": entry.get("trace") or entry.get("traceId"),
+                                "spanId": entry.get("spanId"),
+                                "operation": entry.get("operation"),
+                                
+                                # Additional fields that might be present
+                                "sourceLocation": entry.get("sourceLocation"),
+                                "metadata": entry.get("metadata"),
+                                "receiveTimestamp": entry.get("receiveTimestamp"),
+                                "protoPayload": entry.get("protoPayload"),
+                            }
+                            
+                            # Remove None values to keep the object clean
+                            log_entry = {k: v for k, v in log_entry.items() if v is not None}
+                            
+                            page_logs.append(log_entry)
+                            
+                        except Exception as parse_error:
+                            logger.warning(f"⚠️ Smart Agent: Failed to parse log entry {len(all_logs) + idx}: {str(parse_error)}")
+                            # Still include the raw entry for analysis
+                            page_logs.append({
+                                "id": f"raw_entry_{len(all_logs) + idx}",
+                                "timestamp": entry.get("timestamp"),
+                                "severity": entry.get("severity", "DEFAULT"),
+                                "message": f"Raw log entry (parse error: {str(parse_error)})",
+                                "rawEntry": entry,  # Include the complete raw entry
+                                "projectId": project_id,
+                            })
+                    
+                    all_logs.extend(page_logs)
+                    logger.info(f"🧠 Smart Agent: Total logs collected so far: {len(all_logs)}")
+                    
+                    # Yield progress update
+                    yield f"data: {json.dumps({'type': 'status', 'message': f'Fetched page {page_count}: {len(page_logs)} logs (total: {len(all_logs)})', 'step': 'log_fetching_progress', 'page': page_count, 'total_logs': len(all_logs)})}\n\n"
+                    
+                    # Check if we should continue fetching
+                    if not fetch_all:
+                        # If not fetching all, respect the limit
+                        if len(all_logs) >= limit:
+                            all_logs = all_logs[:limit]
+                            logger.info(f"🧠 Smart Agent: Reached limit of {limit} logs, stopping fetch")
+                            break
+                    
+                    # Check if there are more pages
+                    if not next_page_token:
+                        logger.info(f"🧠 Smart Agent: No more pages available, fetch complete")
+                        break
+                    
+                    page_token = next_page_token
+                
+                if page_count >= max_pages:
+                    logger.warning(f"⚠️ Smart Agent: Reached maximum page limit ({max_pages}), stopping fetch")
+                
+                logger.info(f"🧠 Smart Agent: Comprehensive streaming fetch complete - {len(all_logs)} total logs from {page_count} pages")
+                return all_logs
+                
+            except Exception as e:
+                logger.error(f"❌ Smart Agent: Error in fetch_logs_sync: {str(e)}")
+                raise e
+        
+        try:
+            # Run the synchronous GCP call in a thread pool to avoid blocking
+            with ThreadPoolExecutor() as executor:
+                result = await asyncio.get_event_loop().run_in_executor(
+                    executor, fetch_logs_sync
+                )
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Smart Agent: Error fetching logs from GCP: {str(e)}")
+            # Return empty list instead of raising to allow agent to continue with graceful degradation
             return []
     
     async def _log_analysis_node(self, state: AgentState) -> AgentState:
@@ -1588,29 +2182,33 @@ class SmartLangGraphAgent:
         if context.get("severity"):
             known_info.append(f"Severity: {', '.join(context['severity'])}")
         
-        # Generate contextual questions
-        if "services" in missing:
-            questions.append({
-                "type": "services",
-                "question": "Which specific services should I check?",
-                "context": f"I know you want to look at {', '.join(known_info) if known_info else 'logs'}, but I need to know which services to focus on.",
-                "examples": ["cloud_run_revision", "gce_instance", "cloud_function"]
-            })
-        
+        # Generate contextual questions - only time_range is required
         if "time_range" in missing:
             questions.append({
                 "type": "time_range",
                 "question": "What time period should I investigate?",
-                "context": f"I'm ready to analyze {', '.join(known_info) if known_info else 'the logs'}, but I need a time range.",
-                "examples": ["last hour", "last 24 hours", "this week", "yesterday"]
+                "context": f"I'm ready to analyze your logs, but I need to know the time period to focus on.",
+                "examples": ["last hour", "last 24 hours", "this week", "yesterday", "last 30 minutes"]
             })
         
-        if "severity" in missing:
+        # Services are optional - only ask if user seems to want specific services
+        if "services" in missing and context.get("time_range"):
+            # Only ask about services if we have time_range and user might want specific services
+            questions.append({
+                "type": "services",
+                "question": "Would you like me to focus on specific services, or analyze across ALL services?",
+                "context": f"I can analyze logs across all services in your project, or focus on specific ones if you prefer.",
+                "examples": ["all services", "cloud_run_revision", "gce_instance", "cloud_function", "across all services"]
+            })
+        
+        # Severity is optional - only ask if user seems to want severity filtering
+        if "severity" in missing and context.get("time_range"):
+            # Only ask about severity if we have time_range and user might want severity filtering
             questions.append({
                 "type": "severity",
-                "question": "What severity levels are you interested in?",
-                "context": f"I'll check {', '.join(known_info) if known_info else 'the logs'} for you, but I need to know what to look for.",
-                "examples": ["ERROR only", "WARNING and ERROR", "all severities"]
+                "question": "Would you like me to filter by specific severity levels, or show all log levels?",
+                "context": f"I can show all log levels, or focus on specific severities like errors or warnings.",
+                "examples": ["all severities", "ERROR only", "WARNING and ERROR", "just errors"]
             })
         
         return questions
@@ -1627,23 +2225,41 @@ class SmartLangGraphAgent:
         if context.get("severity"):
             known_info.append(f"✅ Severity: {', '.join(context['severity'])}")
         
-        response_parts = ["I'm almost ready to help you! Here's what I understand so far:"]
+        response_parts = ["I'm ready to help you analyze your logs! Here's what I understand so far:"]
         
         if known_info:
             response_parts.append("")
             response_parts.extend(known_info)
         
         response_parts.append("")
-        response_parts.append("I just need a few more details to get started:")
+        
+        # Check if time_range is missing (the only required field)
+        time_missing = any(q["type"] == "time_range" for q in questions)
+        
+        if time_missing:
+            response_parts.append("I just need to know the time period to analyze:")
+        else:
+            response_parts.append("I have everything I need to get started! Here are some optional filters you can specify:")
         
         for q in questions:
-            response_parts.append(f"\n• {q['question']}")
-            if q.get('context'):
-                response_parts.append(f"  {q['context']}")
-            if q.get('examples'):
-                response_parts.append(f"  Examples: {', '.join(q['examples'])}")
+            if q["type"] == "time_range":
+                response_parts.append(f"\n• {q['question']}")
+                if q.get('context'):
+                    response_parts.append(f"  {q['context']}")
+                if q.get('examples'):
+                    response_parts.append(f"  Examples: {', '.join(q['examples'])}")
+            else:
+                # Optional filters
+                response_parts.append(f"\n• {q['question']} (optional)")
+                if q.get('context'):
+                    response_parts.append(f"  {q['context']}")
+                if q.get('examples'):
+                    response_parts.append(f"  Examples: {', '.join(q['examples'])}")
         
-        response_parts.append("\nOnce you provide these details, I'll immediately start analyzing your logs!")
+        if time_missing:
+            response_parts.append("\nOnce you provide the time period, I'll immediately start analyzing your logs!")
+        else:
+            response_parts.append("\nI can start analyzing now, or you can specify additional filters if you'd like!")
         
         return "\n".join(response_parts)
     
@@ -1806,22 +2422,50 @@ class SmartLangGraphAgent:
         return "; ".join(summary_parts) if summary_parts else "No specific context set"
     
     def _build_intelligent_analysis_prompt(self, state: AgentState) -> str:
-        """Build an intelligent analysis prompt."""
+        """Build an intelligent analysis prompt with intelligent batching for large datasets."""
         
         context = state["investigation_context"]
         
-        # Format logs for context
+        # Get complete log objects from investigation context
+        complete_logs = context.get("complete_logs") or context.get("retrieved_logs") or []
+        
+        # Intelligent batching for very large datasets
+        total_logs = len(complete_logs)
+        max_logs_for_analysis = 5000  # Reasonable limit for AI analysis
+        
+        if total_logs > max_logs_for_analysis:
+            # For very large datasets, use intelligent sampling
+            import random
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            logger.info(f"🧠 Smart Agent: Large dataset detected ({total_logs} logs), using intelligent sampling")
+            
+            # Sample logs intelligently - prioritize recent and high-severity logs
+            sampled_logs = self._intelligent_log_sampling(complete_logs, max_logs_for_analysis)
+            
+            logger.info(f"🧠 Smart Agent: Sampled {len(sampled_logs)} logs from {total_logs} total logs")
+            analysis_logs = sampled_logs
+        else:
+            # Use all logs for smaller datasets
+            analysis_logs = complete_logs
+        
+        # Use complete log objects for context - preserve all log data
         context_lines = []
-        for log in state["relevant_logs"][:state["limit"]]:
+        
+        for log in analysis_logs:
             if not log or not isinstance(log, dict):
                 continue
-                
-            ts = log.get("timestamp") or log.get("time")
-            sev = log.get("severity")
-            msg = log.get("message") or log.get("textPayload")
-            svc = (log.get("resource") or {}).get("type") if isinstance(log.get("resource"), dict) else None
-            insert_id = log.get("id") or log.get("insertId")
-            context_lines.append(f"[{ts}] [{sev}] [{svc}] ({insert_id}) {str(msg)[:500]}")
+            
+            # Include the complete log object as JSON for full context
+            import json
+            try:
+                # Pretty print the complete log object
+                log_json = json.dumps(log, indent=2, default=str)
+                context_lines.append(f"LOG ENTRY:\n{log_json}\n")
+            except Exception as e:
+                # Fallback to string representation if JSON serialization fails
+                context_lines.append(f"LOG ENTRY:\n{str(log)}\n")
         
         context_text = "\n".join(context_lines)
         
@@ -1843,10 +2487,40 @@ class SmartLangGraphAgent:
         services_list = context.get("services") or []
         severity_list = context.get("severity") or []
         
-        services_str = ', '.join(services_list) if services_list else "Not specified"
+        # Handle cross-service analysis
+        if services_list:
+            services_str = ', '.join(services_list)
+        else:
+            services_str = "ALL SERVICES (cross-service analysis)"
+        
         severity_str = ', '.join(severity_list) if severity_list else "All levels"
         
-        prompt = f"""You are a senior SRE conducting an intelligent log investigation. Analyze the provided logs and provide actionable insights.
+        # Add cross-service analysis guidance
+        analysis_guidance = ""
+        if not services_list:
+            analysis_guidance = """
+CROSS-SERVICE ANALYSIS MODE:
+- You are analyzing logs across ALL services in the project
+- Look for patterns that span multiple services
+- Identify service-to-service communication issues
+- Highlight which specific services are most affected
+- Suggest service-specific investigation steps
+- Compare error rates and patterns across different service types
+"""
+        
+        # Add sampling information if intelligent sampling was used
+        sampling_info = ""
+        if total_logs > max_logs_for_analysis:
+            sampling_info = f"""
+INTELLIGENT SAMPLING APPLIED:
+- Total logs available: {total_logs:,}
+- Logs analyzed: {len(analysis_logs):,}
+- Sampling method: Intelligent priority-based sampling
+- Prioritized: ERROR logs (40%), WARNING logs (30%), representative service samples (20%), recent logs (10%)
+- This ensures comprehensive coverage while maintaining analysis quality
+"""
+        
+        prompt = f"""You are a senior SRE conducting an intelligent log investigation. Analyze the provided complete log objects and provide actionable insights.
 
 INVESTIGATION CONTEXT:
 - Project ID: {state["project_id"]}
@@ -1858,31 +2532,142 @@ INVESTIGATION CONTEXT:
 CONVERSATION HISTORY:
 {conversation_history or "This is the start of our investigation."}
 
-RELEVANT LOGS ({len(state["relevant_logs"])} logs):
+RELEVANT LOGS ({len(analysis_logs)} complete log objects):
 {context_text}
 
 USER QUESTION: {state["question"]}
 
 INSTRUCTIONS:
-1. Analyze the logs for patterns, errors, and insights based on the user's focus
-2. Provide specific evidence from the logs (cite insertId when possible)
-3. Consider the conversation context and build upon previous insights
-4. Suggest next investigation steps that would be most valuable
-5. Be conversational but professional - you're an SRE partner
-6. Focus on actionable insights that help resolve the user's concern
+1. Analyze the complete log objects for patterns, errors, and insights based on the user's focus
+2. Use all available fields in the log objects (timestamp, severity, resource, labels, jsonPayload, textPayload, httpRequest, traceId, etc.)
+3. Provide specific evidence from the logs (cite insertId, traceId, or other identifiers when possible)
+4. Consider the conversation context and build upon previous insights
+5. Suggest next investigation steps that would be most valuable
+6. Be conversational but professional - you're an SRE partner
+7. Focus on actionable insights that help resolve the user's concern
+8. Pay attention to structured data in jsonPayload and any custom fields that might be present
+{analysis_guidance}
+{sampling_info}
 
-Please analyze these logs and provide a comprehensive answer to: {state["question"]}"""
+Please analyze these complete log objects and provide a comprehensive answer to: {state["question"]}"""
         
         return prompt
     
+    def _intelligent_log_sampling(self, logs: List[Dict[str, Any]], target_count: int) -> List[Dict[str, Any]]:
+        """
+        Intelligently sample logs from a large dataset, prioritizing:
+        1. High-severity logs (ERROR, WARNING)
+        2. Recent logs (by timestamp)
+        3. Logs with unique patterns/errors
+        4. Representative sample across all services
+        """
+        if len(logs) <= target_count:
+            return logs
+        
+        import random
+        from datetime import datetime
+        from collections import defaultdict
+        
+        # Categorize logs by severity and service
+        error_logs = []
+        warning_logs = []
+        info_logs = []
+        other_logs = []
+        
+        service_logs = defaultdict(list)
+        
+        for log in logs:
+            severity = log.get("severity", "DEFAULT").upper()
+            service_type = (log.get("resource", {}).get("type", "unknown") if isinstance(log.get("resource"), dict) else "unknown")
+            
+            service_logs[service_type].append(log)
+            
+            if severity == "ERROR":
+                error_logs.append(log)
+            elif severity == "WARNING":
+                warning_logs.append(log)
+            elif severity == "INFO":
+                info_logs.append(log)
+            else:
+                other_logs.append(log)
+        
+        sampled_logs = []
+        
+        # Priority 1: Include ALL error logs (up to 40% of target)
+        error_quota = min(len(error_logs), int(target_count * 0.4))
+        if error_logs:
+            sampled_logs.extend(error_logs[:error_quota])
+        
+        # Priority 2: Include warning logs (up to 30% of target)
+        warning_quota = min(len(warning_logs), int(target_count * 0.3))
+        if warning_logs:
+            sampled_logs.extend(warning_logs[:warning_quota])
+        
+        # Priority 3: Include representative sample from each service (up to 20% of target)
+        service_quota = int(target_count * 0.2)
+        service_sample_size = max(1, service_quota // len(service_logs)) if service_logs else 0
+        
+        for service_type, service_log_list in service_logs.items():
+            if len(sampled_logs) >= target_count:
+                break
+            
+            # Sort by timestamp (most recent first) and take sample
+            try:
+                sorted_logs = sorted(service_log_list, key=lambda x: x.get("timestamp", ""), reverse=True)
+                sampled_logs.extend(sorted_logs[:service_sample_size])
+            except:
+                # Fallback to random sampling if timestamp sorting fails
+                sampled_logs.extend(random.sample(service_log_list, min(service_sample_size, len(service_log_list))))
+        
+        # Priority 4: Fill remaining quota with recent info logs and others
+        remaining_quota = target_count - len(sampled_logs)
+        if remaining_quota > 0:
+            # Combine remaining logs and sort by timestamp
+            remaining_logs = []
+            for log in info_logs + other_logs:
+                if log not in sampled_logs:
+                    remaining_logs.append(log)
+            
+            try:
+                # Sort by timestamp (most recent first)
+                remaining_logs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+                sampled_logs.extend(remaining_logs[:remaining_quota])
+            except:
+                # Fallback to random sampling
+                sampled_logs.extend(random.sample(remaining_logs, min(remaining_quota, len(remaining_logs))))
+        
+        # Ensure we don't exceed target count
+        sampled_logs = sampled_logs[:target_count]
+        
+        # Add metadata about sampling
+        sampling_info = {
+            "total_logs": len(logs),
+            "sampled_logs": len(sampled_logs),
+            "sampling_method": "intelligent_priority",
+            "error_logs_included": len([l for l in sampled_logs if l.get("severity", "").upper() == "ERROR"]),
+            "warning_logs_included": len([l for l in sampled_logs if l.get("severity", "").upper() == "WARNING"]),
+            "services_represented": len(set((l.get("resource", {}).get("type", "unknown") if isinstance(l.get("resource"), dict) else "unknown") for l in sampled_logs))
+        }
+        
+        # Add sampling info to the first log entry for reference
+        if sampled_logs:
+            sampled_logs[0]["_sampling_info"] = sampling_info
+        
+        return sampled_logs
+    
     def _format_logs_for_ui(self, logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Format logs for UI display."""
+        """Format logs for UI display while preserving complete log structure."""
         formatted_logs = []
         for log in logs:
             if not log or not isinstance(log, dict):
                 continue
-                
-            formatted_logs.append({
+            
+            # Create a copy of the complete log object
+            complete_log = log.copy()
+            
+            # Add UI-friendly fields for display while preserving all original data
+            formatted_log = {
+                # UI-friendly fields for display
                 "id": str(log.get("id") or log.get("insertId") or "unknown"),
                 "insertId": log.get("insertId"),
                 "timestamp": log.get("timestamp"),
@@ -1891,8 +2676,15 @@ Please analyze these logs and provide a comprehensive answer to: {state["questio
                 "serviceId": (log.get("resource") or {}).get("type") if isinstance(log.get("resource"), dict) else None,
                 "traceId": log.get("traceId") or log.get("trace"),
                 "score": log.get("_score", 0.0),
-                "raw": log,
-            })
+                
+                # Complete log object with all original fields preserved
+                "completeLog": complete_log,
+                
+                # Legacy field for backward compatibility
+                "raw": complete_log,
+            }
+            
+            formatted_logs.append(formatted_log)
         return formatted_logs
     
     def _format_response(self, state: AgentState) -> Dict[str, Any]:

@@ -8,10 +8,18 @@ import {
   Trash2,
   Wrench,
   Database,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  Zap,
+  Brain,
+  Search,
+  Filter,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/Auth";
 import axios from "axios";
+import { RichTextRenderer } from "./RichTextRenderer";
 
 type Message = {
   id: number;
@@ -23,6 +31,7 @@ type Message = {
   needsClarification?: boolean;
   isStreaming?: boolean;
   streamingStep?: string;
+  streamingProgress?: { page: number; totalLogs: number };
 };
 
 type Session = {
@@ -37,8 +46,12 @@ type Session = {
 export const Chatbot = ({
   selectedServices = [],
   projectId = "",
-  onOpenInsight,
+  onOpenInsight = () => {}, // For future use when implementing insight tabs
+  isExpanded = false,
+  onToggleExpand,
 }: any) => {
+  // Suppress unused parameter warning for future use
+  void onOpenInsight;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState<string>("");
   const [isTyping, setIsTyping] = useState<boolean>(false);
@@ -213,6 +226,10 @@ export const Chatbot = ({
                             ...msg,
                             text: `🔄 ${data.message}`,
                             streamingStep: data.step,
+                            // Store additional progress data if available
+                            streamingProgress: data.page
+                              ? { page: data.page, totalLogs: data.total_logs }
+                              : undefined,
                           }
                         : msg
                     )
@@ -329,23 +346,56 @@ export const Chatbot = ({
             </div>
             <div className="text-xs text-blue-300 space-y-1">
               {toolResults.user_parameters.search_query && (
-                <div>Query: {toolResults.user_parameters.search_query}</div>
+                <div>
+                  Query:{" "}
+                  <code className="bg-blue-900/30 px-1 rounded">
+                    {toolResults.user_parameters.search_query}
+                  </code>
+                </div>
               )}
-              {toolResults.user_parameters.resource_filters[
+              {toolResults.user_parameters.resource_filters?.[
                 "resource.type"
               ] && (
                 <div>
                   Services:{" "}
-                  {toolResults.user_parameters.resource_filters[
-                    "resource.type"
-                  ].join(", ")}
+                  <span className="inline-flex flex-wrap gap-1">
+                    {toolResults.user_parameters.resource_filters[
+                      "resource.type"
+                    ].map((service: string, index: number) => (
+                      <span
+                        key={index}
+                        className="px-1.5 py-0.5 bg-blue-900/30 rounded text-xs"
+                      >
+                        {service}
+                      </span>
+                    ))}
+                  </span>
                 </div>
               )}
               {toolResults.user_parameters.severity_filters &&
                 toolResults.user_parameters.severity_filters.length > 0 && (
                   <div>
                     Severity:{" "}
-                    {toolResults.user_parameters.severity_filters.join(", ")}
+                    <span className="inline-flex flex-wrap gap-1">
+                      {toolResults.user_parameters.severity_filters.map(
+                        (severity: string, index: number) => (
+                          <span
+                            key={index}
+                            className={`px-1.5 py-0.5 rounded text-xs ${
+                              severity === "ERROR"
+                                ? "bg-red-900/30 text-red-300"
+                                : severity === "WARNING"
+                                ? "bg-yellow-900/30 text-yellow-300"
+                                : severity === "INFO"
+                                ? "bg-blue-900/30 text-blue-300"
+                                : "bg-gray-900/30 text-gray-300"
+                            }`}
+                          >
+                            {severity}
+                          </span>
+                        )
+                      )}
+                    </span>
                   </div>
                 )}
               {toolResults.user_parameters.time_range &&
@@ -353,9 +403,12 @@ export const Chatbot = ({
                   toolResults.user_parameters.time_range.end_time) && (
                   <div>
                     Time:{" "}
-                    {toolResults.user_parameters.time_range.start_time || "any"}{" "}
-                    to{" "}
-                    {toolResults.user_parameters.time_range.end_time || "now"}
+                    <code className="bg-blue-900/30 px-1 rounded">
+                      {toolResults.user_parameters.time_range.start_time ||
+                        "any"}{" "}
+                      to{" "}
+                      {toolResults.user_parameters.time_range.end_time || "now"}
+                    </code>
                   </div>
                 )}
             </div>
@@ -371,10 +424,21 @@ export const Chatbot = ({
                 Logs Fetched
               </span>
             </div>
-            <div className="text-xs text-green-300">
-              <div>Total logs: {toolResults.fetched_logs.total_fetched}</div>
+            <div className="text-xs text-green-300 space-y-1">
+              <div className="flex items-center gap-2">
+                <span>Total logs:</span>
+                <span className="px-2 py-0.5 bg-green-900/30 rounded font-mono">
+                  {toolResults.fetched_logs.total_fetched}
+                </span>
+              </div>
               <div>
-                Filter applied: {toolResults.fetched_logs.filter_applied}
+                Filter applied:{" "}
+                <code className="bg-green-900/30 px-1 rounded text-xs">
+                  {toolResults.fetched_logs.filter_applied?.substring(0, 100)}
+                  {toolResults.fetched_logs.filter_applied?.length > 100
+                    ? "..."
+                    : ""}
+                </code>
               </div>
             </div>
           </div>
@@ -389,25 +453,50 @@ export const Chatbot = ({
                 Log Analysis Results
               </span>
             </div>
-            <div className="text-xs text-purple-300 space-y-1">
-              <div>Focus: {toolResults.log_analysis.analysis_focus}</div>
-              <div>
-                Total logs analyzed: {toolResults.log_analysis.total_logs}
+            <div className="text-xs text-purple-300 space-y-2">
+              <div className="flex items-center gap-2">
+                <span>Focus:</span>
+                <span className="px-2 py-0.5 bg-purple-900/30 rounded">
+                  {toolResults.log_analysis.analysis_focus}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span>Total logs analyzed:</span>
+                <span className="px-2 py-0.5 bg-purple-900/30 rounded font-mono">
+                  {toolResults.log_analysis.total_logs}
+                </span>
               </div>
               {toolResults.log_analysis.severity_distribution && (
                 <div>
-                  Severity:{" "}
-                  {Object.entries(
-                    toolResults.log_analysis.severity_distribution
-                  )
-                    .map(([sev, count]) => `${sev}:${count}`)
-                    .join(", ")}
+                  <span className="block mb-1">Severity Distribution:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(
+                      toolResults.log_analysis.severity_distribution
+                    ).map(([sev, count]) => (
+                      <span
+                        key={sev}
+                        className={`px-2 py-0.5 rounded text-xs ${
+                          sev === "ERROR"
+                            ? "bg-red-900/30 text-red-300"
+                            : sev === "WARNING"
+                            ? "bg-yellow-900/30 text-yellow-300"
+                            : sev === "INFO"
+                            ? "bg-blue-900/30 text-blue-300"
+                            : "bg-gray-900/30 text-gray-300"
+                        }`}
+                      >
+                        {sev}: {String(count)}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               {toolResults.log_analysis.key_insights && (
-                <div>
-                  Key insights: {toolResults.log_analysis.key_insights.length}{" "}
-                  found
+                <div className="flex items-center gap-2">
+                  <span>Key insights:</span>
+                  <span className="px-2 py-0.5 bg-purple-900/30 rounded font-mono">
+                    {toolResults.log_analysis.key_insights.length} found
+                  </span>
                 </div>
               )}
             </div>
@@ -457,6 +546,8 @@ export const Chatbot = ({
           return "🔍";
         case "log_fetching":
           return "📡";
+        case "log_fetching_progress":
+          return "📊";
         case "log_analysis":
           return "🤖";
         case "action_generation":
@@ -478,6 +569,8 @@ export const Chatbot = ({
           return "Discovering GCP resources...";
         case "log_fetching":
           return "Fetching logs from GCP...";
+        case "log_fetching_progress":
+          return "Comprehensive log fetch in progress...";
         case "log_analysis":
           return "AI analyzing logs...";
         case "action_generation":
@@ -506,6 +599,12 @@ export const Chatbot = ({
               style={{ width: "60%" }}
             ></div>
           </div>
+          {message.streamingProgress && (
+            <div className="text-xs text-blue-400 ml-2">
+              Page {message.streamingProgress.page} •{" "}
+              {message.streamingProgress.totalLogs.toLocaleString()} logs
+            </div>
+          )}
         </div>
       </div>
     );
@@ -513,71 +612,111 @@ export const Chatbot = ({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-800 px-4 py-3">
+      {/* Modern Header with Glassmorphism */}
+      <div className="bg-gradient-to-r from-slate-900/95 via-slate-800/95 to-slate-900/95 backdrop-blur-xl border-b border-slate-700/50 px-6 py-4 shadow-2xl">
         <div className="flex items-center justify-between">
-          <h3 className="text-white font-semibold flex items-center gap-2">
-            <Bot className="w-5 h-5 text-blue-400" />
-            AI Agent (Real-Time Streaming)
-          </h3>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowSessions(!showSessions)}
-              className="p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
-              title="Session History"
-            >
-              <History className="w-4 h-4 text-gray-400" />
-            </button>
-            <span className="text-[10px] uppercase tracking-wider text-gray-400">
-              Model
-            </span>
-            <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-900/40 text-blue-300 border border-blue-800">
-              Gemini 1.5 Flash
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+                <Brain className="w-5 h-5 text-white" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-yellow-400" />
+                AI Log Analyst
+              </h3>
+              <p className="text-slate-400 text-sm">
+                Real-time streaming analysis
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Model Badge */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/60 backdrop-blur-sm rounded-full border border-slate-700/50">
+              <Zap className="w-3 h-3 text-yellow-400" />
+              <span className="text-xs font-medium text-slate-300">
+                Gemini 1.5 Flash
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowSessions(!showSessions)}
+                className="p-2 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50 hover:border-slate-600/50 transition-all duration-200 group"
+                title="Session History"
+              >
+                <History className="w-4 h-4 text-slate-400 group-hover:text-slate-300 transition-colors" />
+              </button>
+
+              {onToggleExpand && (
+                <button
+                  onClick={onToggleExpand}
+                  className="p-2 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50 hover:border-slate-600/50 transition-all duration-200 group"
+                  title={isExpanded ? "Minimize" : "Expand"}
+                >
+                  {isExpanded ? (
+                    <Minimize2 className="w-4 h-4 text-slate-400 group-hover:text-slate-300 transition-colors" />
+                  ) : (
+                    <Maximize2 className="w-4 h-4 text-slate-400 group-hover:text-slate-300 transition-colors" />
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Session Management Panel */}
+        {/* Modern Session Management Panel */}
         {showSessions && (
-          <div className="mt-3 p-3 bg-gray-950/60 rounded-lg border border-gray-800">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium text-gray-300">
+          <div className="mt-4 p-4 bg-slate-800/40 backdrop-blur-xl rounded-2xl border border-slate-700/50 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-blue-400" />
                 Conversation Sessions
               </h4>
               <button
                 onClick={startNewSession}
-                className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-xs font-medium rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl"
               >
-                New Session
+                + New Session
               </button>
             </div>
 
             {sessions.length === 0 ? (
-              <p className="text-xs text-gray-500">No active sessions</p>
+              <div className="text-center py-6">
+                <MessageSquare className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+                <p className="text-sm text-slate-500">No active sessions</p>
+              </div>
             ) : (
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div className="space-y-3 max-h-48 overflow-y-auto">
                 {sessions.map((session) => (
                   <div
                     key={session.session_id}
-                    className={`flex items-center justify-between p-2 rounded border cursor-pointer transition-colors ${
+                    className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
                       currentSessionId === session.session_id
-                        ? "bg-blue-900/40 border-blue-700"
-                        : "bg-gray-900/40 border-gray-700 hover:bg-gray-800/40"
+                        ? "bg-blue-500/20 border-blue-500/50 shadow-lg"
+                        : "bg-slate-700/40 border-slate-600/50 hover:bg-slate-700/60 hover:border-slate-500/50"
                     }`}
                   >
                     <div
                       className="flex-1 min-w-0"
                       onClick={() => loadSessionHistory(session.session_id)}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="text-xs text-slate-400 font-medium">
                           {new Date(session.last_updated).toLocaleDateString()}
                         </span>
-                        <span className="text-xs text-gray-500">
-                          {session.message_count} messages
-                        </span>
+                        <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-600/50 rounded-full">
+                          <span className="text-xs text-slate-300">
+                            {session.message_count} messages
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-xs text-gray-300 truncate">
-                        {session.context_summary || "No context"}
+                      <p className="text-sm text-slate-200 truncate font-medium">
+                        {session.context_summary || "No context available"}
                       </p>
                     </div>
                     <button
@@ -585,10 +724,10 @@ export const Chatbot = ({
                         e.stopPropagation();
                         deleteSession(session.session_id);
                       }}
-                      className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                      className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
                       title="Delete session"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
@@ -600,40 +739,68 @@ export const Chatbot = ({
 
       <div
         ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-gray-950/30"
+        className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 bg-gradient-to-b from-slate-900/50 to-slate-950/50"
       >
         {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-8">
-            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-700" />
-            <p className="text-sm">Ask me about your GCP logs!</p>
-            <p className="text-xs mt-2">
+          <div className="text-center text-slate-400 mt-12">
+            <div className="relative mb-6">
+              <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-600/20 backdrop-blur-sm border border-slate-700/50 flex items-center justify-center">
+                <Brain className="w-10 h-10 text-blue-400" />
+              </div>
+              <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
+            </div>
+
+            <h3 className="text-lg font-semibold text-slate-200 mb-2">
+              Welcome to AI Log Analyst
+            </h3>
+            <p className="text-sm text-slate-400 mb-4 max-w-md mx-auto">
               I'll help you fetch and analyze logs with real-time streaming
-              updates
+              updates and intelligent insights. I can now provide **rich text**
+              responses with:
             </p>
-            <p className="text-xs mt-1">
-              Try: "Show me authentication errors from Cloud Run services in the
-              last hour" or "Find performance issues in my GCE instances"
-            </p>
-            <div className="mt-3 p-3 bg-gray-800/40 rounded-lg border border-gray-700/50">
-              <p className="text-xs text-gray-400 font-medium mb-2">
-                Example patterns:
+            <div className="text-xs text-slate-500 mb-4 max-w-md mx-auto text-left">
+              • **Bold** and *italic* formatting
+              <br />
+              • `Inline code` and code blocks
+              <br />
+              • Structured data visualization
+              <br />
+              • Interactive log entries
+              <br />• Collapsible sections
+            </div>
+
+            <div className="mt-6 p-4 bg-slate-800/40 backdrop-blur-sm rounded-2xl border border-slate-700/50 max-w-lg mx-auto">
+              <p className="text-sm text-slate-300 font-medium mb-3 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-yellow-400" />
+                Try these example queries:
               </p>
-              <div className="text-xs text-gray-500 space-y-1">
-                <div>
-                  • "Show me [search terms] from [services] in [time range]"
+              <div className="text-sm text-slate-400 space-y-2 text-left">
+                <div className="p-2 bg-slate-700/30 rounded-lg border border-slate-600/30">
+                  <span className="text-blue-400">
+                    "Show me **authentication errors** from `cloud_run_revision`
+                    services in the last hour"
+                  </span>
                 </div>
-                <div>
-                  • "Find [severity] logs for [services] containing [keywords]"
+                <div className="p-2 bg-slate-700/30 rounded-lg border border-slate-600/30">
+                  <span className="text-green-400">
+                    "Find *performance issues* in my `gce_instance` logs"
+                  </span>
                 </div>
-                <div>
-                  • "Check [services] for [issues] between [start] and [end]"
+                <div className="p-2 bg-slate-700/30 rounded-lg border border-slate-600/30">
+                  <span className="text-purple-400">
+                    "Check for **5xx errors** in my load balancer logs"
+                  </span>
                 </div>
               </div>
             </div>
+
             {currentSessionId && (
-              <p className="text-xs mt-1 text-blue-400">
-                Continuing conversation session
-              </p>
+              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl max-w-md mx-auto">
+                <p className="text-sm text-blue-300 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Continuing conversation session
+                </p>
+              </div>
             )}
           </div>
         )}
@@ -645,26 +812,32 @@ export const Chatbot = ({
               message.sender === "user" ? "justify-end" : "justify-start"
             }`}
           >
-            <div className="flex items-start gap-2 max-w-[80%]">
+            <div className="flex items-start gap-3 max-w-[85%]">
               {message.sender === "ai" ? (
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-900/40 border border-blue-800 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-blue-300" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 border border-blue-400/50 flex items-center justify-center shadow-lg">
+                  <Brain className="w-4 h-4 text-white" />
                 </div>
               ) : (
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center">
-                  <User className="w-4 h-4 text-gray-300" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-slate-600 to-slate-700 border border-slate-500/50 flex items-center justify-center shadow-lg">
+                  <User className="w-4 h-4 text-white" />
                 </div>
               )}
               <div
-                className={`rounded-2xl px-4 py-2 border ${
+                className={`rounded-2xl px-5 py-3 border backdrop-blur-sm shadow-lg ${
                   message.sender === "user"
-                    ? "bg-blue-600 text-white border-blue-500"
-                    : "bg-gray-900 text-gray-200 border-gray-800"
+                    ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-500/50"
+                    : "bg-slate-800/80 text-slate-200 border-slate-700/50"
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">
-                  {message.text}
-                </p>
+                {message.sender === "ai" ? (
+                  <div className="text-sm leading-relaxed">
+                    <RichTextRenderer content={message.text} />
+                  </div>
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                    {message.text}
+                  </p>
+                )}
 
                 {/* Clarification Needed Indicator */}
                 {message.needsClarification && (
@@ -721,8 +894,11 @@ export const Chatbot = ({
         )}
       </div>
 
-      <div className="border-t border-gray-800 p-3">
-        <div className="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 focus-within:border-blue-700/60">
+      <div className="border-t border-slate-700/50 p-6 bg-slate-900/50 backdrop-blur-sm">
+        <div className="flex items-center gap-3 bg-slate-800/60 border border-slate-700/50 rounded-2xl px-4 py-3 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200 shadow-lg">
+          <div className="flex-shrink-0">
+            <Search className="w-5 h-5 text-slate-400" />
+          </div>
           <input
             type="text"
             value={input}
@@ -730,23 +906,62 @@ export const Chatbot = ({
             onKeyDown={handleKeyDown}
             placeholder={
               sending
-                ? "AI is analyzing..."
-                : "Specify search query, services, time range, and severity... (Enter to send)"
+                ? "AI is analyzing your query..."
+                : "Ask about your GCP logs, services, time ranges, or specific issues... (Enter to send)"
             }
-            className="flex-1 px-2 py-2 bg-transparent text-white placeholder-gray-500 focus:outline-none"
+            className="flex-1 bg-transparent text-slate-200 placeholder-slate-500 focus:outline-none text-sm"
             disabled={sending}
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim() || sending}
-            className={`inline-flex items-center justify-center px-3 py-2 rounded-lg transition-colors ${
+            className={`inline-flex items-center justify-center px-4 py-2 rounded-xl transition-all duration-200 shadow-lg ${
               !input.trim() || sending
-                ? "bg-gray-800 text-gray-500 cursor-not-allowed"
-                : "bg-blue-600 text-white hover:bg-blue-700"
+                ? "bg-slate-700/50 text-slate-500 cursor-not-allowed"
+                : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white hover:shadow-xl transform hover:scale-105"
             }`}
-            title="Send"
+            title="Send message"
           >
-            <Send className="w-5 h-5" />
+            {sending ? (
+              <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+
+        {/* Quick Action Buttons */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() =>
+              setInput(
+                "Show me **ERROR** logs from `cloud_run_revision` services in the last hour"
+              )
+            }
+            className="px-3 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 rounded-lg border border-slate-600/50 transition-all duration-200"
+          >
+            <Filter className="w-3 h-3 inline mr-1" />
+            Recent Errors
+          </button>
+          <button
+            onClick={() =>
+              setInput("Find *performance issues* in my `gce_instance` logs")
+            }
+            className="px-3 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 rounded-lg border border-slate-600/50 transition-all duration-200"
+          >
+            <Zap className="w-3 h-3 inline mr-1" />
+            Performance
+          </button>
+          <button
+            onClick={() =>
+              setInput(
+                "Check for **authentication failures** across all services"
+              )
+            }
+            className="px-3 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 rounded-lg border border-slate-600/50 transition-all duration-200"
+          >
+            <Database className="w-3 h-3 inline mr-1" />
+            Auth Issues
           </button>
         </div>
       </div>

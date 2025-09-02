@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from google.oauth2.credentials import Credentials
+
 from dotenv import load_dotenv
 from pathlib import Path
-# from fastapi.routing import APIRoute
+
 from app.api.main import api_router
 from .core.config import settings
 
-# load_dotenv()
+
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI()

@@ -7,11 +7,11 @@ from datetime import datetime
 from google.cloud import logging as gcp_logging
 from google.oauth2.credentials import Credentials
 from google.cloud import resourcemanager_v3
-# from ...models.models import LogEntry, LogQuery
+
 from ..helpers.authHelper import get_current_user,get_user_tokens, is_token_expired
 from ..routes.auth import refresh_token
 from fastapi import Body
-# from ...services.deployment_service import GCPDeploymentService
+
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -228,12 +228,13 @@ async def analyze_logs(query: Any = Body(...), current_user: str = Depends(get_c
         if not analysis_data or not analysis_data.get("logs_for_analysis"):
             raise HTTPException(status_code=400, detail="No analysis data provided. Please query logs first.")
         
-        # Prepare data for agent analysis
+        # Prepare data for agent analysis with complete log objects
         agent_analysis_data = {
             "question": analysis_question,
             "filter_applied": filter_applied,
             "project_id": project_id,
-            "logs": analysis_data["logs_for_analysis"],
+            "logs": analysis_data["logs_for_analysis"],  # Complete log objects
+            "complete_logs": analysis_data["logs_for_analysis"],  # Explicit alias for complete logs
             "summary": {
                 "total_entries": analysis_data["total_entries"],
                 "severity_distribution": analysis_data["severity_distribution"],
@@ -246,11 +247,11 @@ async def analyze_logs(query: Any = Body(...), current_user: str = Depends(get_c
         }
 
         # TODO: Here you would integrate with your AI agent
-        # The agent can now analyze the same logs that are displayed to the user
+        # The agent can now analyze the complete log objects with all their fields and structure
         return {
             "analysis_data": agent_analysis_data,
             "agent_ready": True,
-            "message": f"Log data prepared for agent analysis. {len(analysis_data['logs_for_analysis'])} logs available for analysis.",
+            "message": f"Complete log objects prepared for agent analysis. {len(analysis_data['logs_for_analysis'])} complete log entries available for analysis.",
             "metadata": {
                 "logs_analyzed": len(analysis_data["logs_for_analysis"]),
                 "question": analysis_question,

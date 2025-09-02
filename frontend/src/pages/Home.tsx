@@ -90,6 +90,7 @@ export const Home = () => {
   );
 
   const [logCount, setLogCount] = useState(100); // Add log count state
+  const [isChatbotExpanded, setIsChatbotExpanded] = useState(false); // Add chatbot expand state
 
   // Initialize pending search with default time values
   useEffect(() => {
@@ -473,11 +474,16 @@ export const Home = () => {
     [tabs]
   );
 
+  // Handle chatbot expand toggle
+  const handleChatbotToggle = useCallback(() => {
+    setIsChatbotExpanded((prev) => !prev);
+  }, []);
+
   return (
-    <div className="bg-gray-950 min-h-screen flex flex-col">
+    <div className="bg-gray-950 h-screen flex flex-col overflow-hidden">
       {/* Header */}
       <header className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-800/50 sticky top-0 z-50">
-        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3 md:py-4">
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
             {/* Logo and Title Section */}
             <div className="flex items-center justify-between sm:justify-start">
@@ -630,7 +636,7 @@ export const Home = () => {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-4 sm:py-6">
+      <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3 min-h-0">
         {!selectedProvider ? (
           // Show welcome message when no provider is selected
           <div className="flex flex-col items-center justify-center h-full">
@@ -651,100 +657,130 @@ export const Home = () => {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-4 sm:gap-6 xl:gap-8 2xl:gap-12 h-full">
-            {/* Logs Section */}
-            <div className="xl:col-span-13 2xl:col-span-13 space-y-3 sm:space-y-4 xl:space-y-6">
-              {/* Logs Viewer Card */}
-              <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden">
-                <div className="px-4 sm:px-6 xl:px-8 py-3 sm:py-4 xl:py-6 border-b border-gray-800/50 bg-gray-900/30">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
-                    <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4">
-                      <h3 className="text-base sm:text-lg xl:text-xl font-semibold text-white">
-                        Log Entries
-                      </h3>
-                      {/* Log count dropdown */}
-                      <select
-                        className="ml-2 px-2 py-1 rounded bg-gray-800 text-blue-400 border border-blue-800 text-xs xl:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={logCount}
-                        onChange={(e) => setLogCount(Number(e.target.value))}
-                        style={{ minWidth: 60 }}
-                        title="Select number of logs to display"
-                      >
-                        {[50, 100, 200, 500, 1000].map((count) => (
-                          <option key={count} value={count}>
-                            {count}
-                          </option>
-                        ))}
-                      </select>
-                      {activeTabId &&
-                        tabLogs[activeTabId] &&
-                        tabLogs[activeTabId].length > 0 && (
-                          <span className="inline-flex items-center px-2 py-0.5 sm:px-2.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
-                            {tabLogs[activeTabId].length} entries
-                          </span>
-                        )}
-                    </div>
-                    {isLoading && (
-                      <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
-                        <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                        <span className="text-xs sm:text-sm xl:text-base">
-                          Loading logs...
-                        </span>
-                      </div>
-                    )}
+          <div className="h-full">
+            {isChatbotExpanded ? (
+              /* Full-screen Chatbot when expanded */
+              <div className="h-full">
+                <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg h-full overflow-hidden">
+                  <div className="h-full flex flex-col min-h-0">
+                    <Chatbot
+                      key="chatbot-main" // Use same key to maintain component identity
+                      selectedServices={
+                        selectedService ? [selectedService.id] : []
+                      }
+                      projectId={selectedProject}
+                      onOpenInsight={handleOpenInsightFromChat}
+                      isExpanded={isChatbotExpanded}
+                      onToggleExpand={handleChatbotToggle}
+                    />
                   </div>
                 </div>
-                <div className="relative">
-                  {(!activeTabId ||
-                    !tabLogs[activeTabId] ||
-                    tabLogs[activeTabId].length === 0) &&
-                  !isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
-                        <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
+              </div>
+            ) : (
+              /* Normal layout with logs and chatbot side by side */
+              <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-3 sm:gap-4 xl:gap-6 2xl:gap-8 h-full">
+                {/* Logs Section */}
+                <div className="xl:col-span-13 2xl:col-span-13 flex flex-col min-h-0">
+                  {/* Logs Viewer Card */}
+                  <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden flex-1 flex flex-col min-h-0">
+                    <div className="px-4 sm:px-6 xl:px-8 py-2 sm:py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+                        <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4">
+                          <h3 className="text-base sm:text-lg xl:text-xl font-semibold text-white">
+                            Log Entries
+                          </h3>
+                          {/* Log count dropdown */}
+                          <select
+                            className="ml-2 px-2 py-1 rounded bg-gray-800 text-blue-400 border border-blue-800 text-xs xl:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={logCount}
+                            onChange={(e) =>
+                              setLogCount(Number(e.target.value))
+                            }
+                            style={{ minWidth: 60 }}
+                            title="Select number of logs to display"
+                          >
+                            {[50, 100, 200, 500, 1000].map((count) => (
+                              <option key={count} value={count}>
+                                {count}
+                              </option>
+                            ))}
+                          </select>
+                          {activeTabId &&
+                            tabLogs[activeTabId] &&
+                            tabLogs[activeTabId].length > 0 && (
+                              <span className="inline-flex items-center px-2 py-0.5 sm:px-2.5 xl:px-3 xl:py-1 rounded-full text-xs xl:text-sm font-medium bg-blue-900/20 text-blue-400 border border-blue-800">
+                                {tabLogs[activeTabId].length} entries
+                              </span>
+                            )}
+                        </div>
+                        {isLoading && (
+                          <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
+                            <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                            <span className="text-xs sm:text-sm xl:text-base">
+                              Loading logs...
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <h3 className="text-base sm:text-lg xl:text-xl font-medium text-gray-300 mb-2 xl:mb-3 text-center">
-                        No logs found
-                      </h3>
-                      <p className="text-gray-500 text-center max-w-sm sm:max-w-md xl:max-w-lg text-xs sm:text-sm xl:text-lg">
-                        {!selectedProject || !selectedService
-                          ? "Select a project and service to start exploring logs"
-                          : "Try adjusting your search query or filters to find relevant logs"}
-                      </p>
                     </div>
-                  ) : (
-                    <div
-                      ref={scrollContainerRef}
-                      onScroll={handleScroll}
-                      className="max-h-[calc(100vh-300px)] sm:max-h-[calc(100vh-350px)] xl:max-h-[calc(100vh-400px)] overflow-y-auto"
-                    >
-                      <EnhancedLogViewer logs={tabLogs[activeTabId] || []} />
-                      {/* Loading more indicator */}
-                      {isLoadingMore && (
-                        <div className="py-2 text-center text-xs text-gray-400">
-                          Loading more...
+                    <div className="flex-1 flex flex-col min-h-0">
+                      {(!activeTabId ||
+                        !tabLogs[activeTabId] ||
+                        tabLogs[activeTabId].length === 0) &&
+                      !isLoading ? (
+                        <div className="flex-1 flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
+                          <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
+                            <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
+                          </div>
+                          <h3 className="text-base sm:text-lg xl:text-xl font-medium text-gray-300 mb-2 xl:mb-3 text-center">
+                            No logs found
+                          </h3>
+                          <p className="text-gray-500 text-center max-w-sm sm:max-w-md xl:max-w-lg text-xs sm:text-sm xl:text-lg">
+                            {!selectedProject || !selectedService
+                              ? "Select a project and service to start exploring logs"
+                              : "Try adjusting your search query or filters to find relevant logs"}
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          ref={scrollContainerRef}
+                          onScroll={handleScroll}
+                          className="flex-1 overflow-y-auto min-h-0"
+                        >
+                          <EnhancedLogViewer
+                            logs={tabLogs[activeTabId] || []}
+                          />
+                          {/* Loading more indicator */}
+                          {isLoadingMore && (
+                            <div className="py-2 text-center text-xs text-gray-400">
+                              Loading more...
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Chatbot Section */}
-            <div className="xl:col-span-7 2xl:col-span-7 min-h-0">
-              <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg h-[300px] sm:h-[400px] xl:h-[calc(100vh-300px)] 2xl:h-[calc(100vh-280px)] xl:sticky xl:top-24 overflow-hidden">
-                <div className="h-full flex flex-col min-h-0">
-                  <Chatbot
-                    selectedServices={
-                      selectedService ? [selectedService.id] : []
-                    }
-                    projectId={selectedProject}
-                    onOpenInsight={handleOpenInsightFromChat}
-                  />
+                {/* Chatbot Section */}
+                <div className="xl:col-span-7 2xl:col-span-7 flex flex-col min-h-0">
+                  <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg flex-1 flex flex-col min-h-0 xl:sticky xl:top-24 overflow-hidden">
+                    <div className="h-full flex flex-col min-h-0">
+                      <Chatbot
+                        key="chatbot-main" // Use same key to maintain component identity
+                        selectedServices={
+                          selectedService ? [selectedService.id] : []
+                        }
+                        projectId={selectedProject}
+                        onOpenInsight={handleOpenInsightFromChat}
+                        isExpanded={isChatbotExpanded}
+                        onToggleExpand={handleChatbotToggle}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </main>

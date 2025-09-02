@@ -230,7 +230,12 @@ class GCPResourceDiscovery:
                             else:
                                 return data
                         else:
-                            print(f"API call failed: {response.status} - {url}")
+                            if response.status == 403:
+                                print(f"⚠️ Resource Discovery: Permission denied for {url} - skipping this resource")
+                            elif response.status == 404:
+                                print(f"⚠️ Resource Discovery: Resource not found for {url} - skipping this resource")
+                            else:
+                                print(f"⚠️ Resource Discovery: API call failed: {response.status} - {url}")
                             return None
             except Exception as fallback_error:
                 print(f"Fallback API call failed for {url}: {fallback_error}")
