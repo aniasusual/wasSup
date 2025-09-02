@@ -57,7 +57,19 @@ interface ParsedQuery {
 // Function to parse GCP log query
 const parseGCPQuery = (query: string): ParsedQuery | null => {
   try {
-    const lines = query.split("\n").filter((line) => line.trim());
+    // Handle both newline-separated and AND-separated queries
+    let lines: string[];
+    if (query.includes("\n")) {
+      // Newline-separated format
+      lines = query.split("\n").filter((line) => line.trim());
+    } else {
+      // AND-separated format (single line)
+      lines = query
+        .split(" AND ")
+        .map((line) => line.trim())
+        .filter((line) => line);
+    }
+
     const result: ParsedQuery = {
       resourceType: "",
       resourceLabels: {},
@@ -151,6 +163,14 @@ const parseGCPQuery = (query: string): ParsedQuery | null => {
         });
       }
     }
+
+    console.log("Parsed query result:", {
+      originalQuery: query,
+      parsedResourceType: result.resourceType,
+      parsedResourceLabels: result.resourceLabels,
+      parsedAdditionalQueries: result.additionalQueries,
+      lines: lines,
+    });
 
     return result.resourceType ? result : null;
   } catch (error) {
@@ -339,6 +359,48 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   // Use refs to track the latest values to prevent stale closures
   const resourceTypeRef = useRef(resourceType);
   const projectIdRef = useRef(projectId);
+
+  // Initialize state from existing tab query when component mounts
+  useEffect(() => {
+    if (tab.query && tab.query.trim()) {
+      addDebugMessage(
+        `Initializing query builder with existing query: ${tab.query}`
+      );
+      const parsed = parseGCPQuery(tab.query);
+      if (parsed) {
+        // Update resource type if parsed from query
+        if (parsed.resourceType && parsed.resourceType !== resourceType) {
+          setResourceType(parsed.resourceType);
+          addDebugMessage(
+            `Set resource type from query: ${parsed.resourceType}`
+          );
+        }
+
+        // Update resource labels
+        if (Object.keys(parsed.resourceLabels).length > 0) {
+          setResourceLabels(parsed.resourceLabels);
+          setDependencyValues(parsed.resourceLabels);
+          addDebugMessage(
+            `Set resource labels from query: ${JSON.stringify(
+              parsed.resourceLabels
+            )}`
+          );
+        }
+
+        // Update additional queries
+        if (parsed.additionalQueries.length > 0) {
+          setAdditionalQueries(parsed.additionalQueries);
+          addDebugMessage(
+            `Set additional queries from query: ${parsed.additionalQueries.length} conditions`
+          );
+        }
+      } else {
+        addDebugMessage(`Failed to parse existing query: ${tab.query}`);
+      }
+    } else {
+      addDebugMessage("No existing query found, using default state");
+    }
+  }, []); // Only run once when component mounts
 
   // Update refs when values change
   useEffect(() => {
