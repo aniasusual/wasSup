@@ -8,9 +8,7 @@ from ..helpers.authHelper import get_current_user, create_access_token, store_us
 
 router = APIRouter(tags=["auth"])
 
-# @router.get("/auth/login")
-# async def login():
-#     return {"message": "Hello, World!"}
+
 
 # Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
