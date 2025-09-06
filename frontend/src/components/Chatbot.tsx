@@ -46,12 +46,14 @@ type Session = {
 export const Chatbot = ({
   selectedServices = [],
   projectId = "",
+  projectArchitecture = "",
   onOpenInsight = () => {}, // For future use when implementing insight tabs
   isExpanded = false,
   onToggleExpand,
 }: any) => {
   // Suppress unused parameter warning for future use
   void onOpenInsight;
+  void projectArchitecture; // Will be used for AI context in future
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState<string>("");
   const [isTyping, setIsTyping] = useState<boolean>(false);
