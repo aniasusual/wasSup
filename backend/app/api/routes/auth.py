@@ -5,6 +5,8 @@ import httpx
 import os
 from datetime import datetime, timedelta
 from ..helpers.authHelper import get_current_user, create_access_token, store_user_tokens, get_user_tokens, remove_user_tokens
+from app.services.user_service import user_service
+from app.models.user import UserCreate
 
 router = APIRouter(tags=["auth"])
 
@@ -76,14 +78,23 @@ async def auth_callback(code: str):
         
         user_info = user_response.json()
         email = user_info["email"]
+        name = user_info.get("name", "")
+        picture = user_info.get("picture", "")
+        google_id = user_info.get("id", "")
         
-        # Store tokens using shared token manager
-        store_user_tokens(
+        # Create or update user in database
+        user_data = UserCreate(
             email=email,
+            name=name,
+            picture=picture,
+            google_id=google_id,
             access_token=tokens["access_token"],
             refresh_token=tokens.get("refresh_token"),
-            expires_in=tokens["expires_in"]
+            token_expires_at=datetime.utcnow() + timedelta(seconds=tokens["expires_in"])
         )
+        
+        # Create or update user
+        user = await user_service.create_user(user_data)
         
         # Create JWT for frontend
         jwt_token = create_access_token({"sub": email})
@@ -96,7 +107,7 @@ async def auth_callback(code: str):
 @router.post("/auth/refresh")
 async def refresh_token(current_user: str = Depends(get_current_user)):
     """Refresh Google access token"""
-    user_token_data = get_user_tokens(current_user)
+    user_token_data = await get_user_tokens(current_user)
     if not user_token_data or not user_token_data.get("refresh_token"):
         raise HTTPException(status_code=400, detail="No refresh token available")
     
@@ -115,7 +126,7 @@ async def refresh_token(current_user: str = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="Failed to refresh token")
         
         new_tokens = response.json()
-        store_user_tokens(
+        await store_user_tokens(
             email=current_user,
             access_token=new_tokens["access_token"],
             refresh_token=user_token_data.get("refresh_token"),
@@ -127,5 +138,5 @@ async def refresh_token(current_user: str = Depends(get_current_user)):
 @router.get("/auth/logout")
 async def logout(current_user: str = Depends(get_current_user)):
     """Logout user"""
-    remove_user_tokens(current_user)
+    await remove_user_tokens(current_user)
     return {"success": True}

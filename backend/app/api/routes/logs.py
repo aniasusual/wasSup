@@ -44,13 +44,13 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
     """
     Fetch logs from GCP and return in frontend-compatible format (logs, nextPageToken, totalEntries).
     """
-    user_token_data = get_user_tokens(current_user)
+    user_token_data = await get_user_tokens(current_user)
     if not user_token_data:
         raise HTTPException(status_code=401, detail="User not authenticated")
 
     if is_token_expired(current_user):
         await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
+        user_token_data = await get_user_tokens(current_user)
 
     def fetch_logs_sync():
         try:
@@ -166,7 +166,7 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
 @router.get("/logs/projects")
 async def get_projects(current_user: str = Depends(get_current_user)):
     """Get list of GCP projects accessible to the user"""
-    user_token_data = get_user_tokens(current_user)
+    user_token_data = await get_user_tokens(current_user)
     if not user_token_data:
         raise HTTPException(status_code=401, detail="User not authenticated")
     
@@ -174,7 +174,7 @@ async def get_projects(current_user: str = Depends(get_current_user)):
     if is_token_expired(current_user):
         # Try to refresh
         await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
+        user_token_data = await get_user_tokens(current_user)
     
     try:
         # Create credentials from token
@@ -210,13 +210,13 @@ async def get_projects(current_user: str = Depends(get_current_user)):
 @router.post("/logs/analyze")
 async def analyze_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
     """Agent endpoint for log analysis - works with analysis data from query endpoint"""
-    user_token_data = get_user_tokens(current_user)
+    user_token_data = await get_user_tokens(current_user)
     if not user_token_data:
         raise HTTPException(status_code=401, detail="User not authenticated")
     
     if is_token_expired(current_user):
         await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
+        user_token_data = await get_user_tokens(current_user)
     
     try:
         # Extract analysis parameters
@@ -288,13 +288,13 @@ async def gcp_resource_options(
         if not resourceType or not label or not projectId:
             return {"options": [], "message": "Missing required parameters: resourceType, label, or projectId"}
         
-        user_token_data = get_user_tokens(current_user)
+        user_token_data = await get_user_tokens(current_user)
         if not user_token_data:
             raise HTTPException(status_code=401, detail="User not authenticated")
             
         if is_token_expired(current_user):
             await refresh_token(current_user)
-            user_token_data = get_user_tokens(current_user)
+            user_token_data = await get_user_tokens(current_user)
         
         # Find the API config for this resourceType and label
         api_config = GCP_API_ENDPOINTS.get(resourceType, {}).get(label)

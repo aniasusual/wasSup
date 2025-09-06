@@ -10,6 +10,7 @@ import { useLogService } from "../services/logService";
 import type { GCPService, LogTab } from "../types/gcp";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
+import { ProjectArchitecturePrompt } from "../components/ProjectArchitecturePrompt";
 import toast from "react-hot-toast";
 import { parseGCPErrorMessage } from "../utils/errorUtils";
 
@@ -91,6 +92,7 @@ export const Home = () => {
 
   const [logCount, setLogCount] = useState(100); // Add log count state
   const [isChatbotExpanded, setIsChatbotExpanded] = useState(false); // Add chatbot expand state
+  const [projectArchitecture, setProjectArchitecture] = useState<string>(""); // Project architecture state
 
   // Initialize pending search with default time values
   useEffect(() => {
@@ -602,6 +604,18 @@ export const Home = () => {
           onServiceSelect={handleServiceSelect}
         />
       )}
+
+      {/* Project Architecture Prompt - only show when project is selected */}
+      {selectedProvider && selectedProject && (
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
+          <ProjectArchitecturePrompt
+            projectId={selectedProject}
+            onArchitectureChange={setProjectArchitecture}
+            className="w-full"
+          />
+        </div>
+      )}
+
       {/* Modern Search and Date/Time Filter Bar - only show when provider is selected */}
       {selectedProvider && (
         <DateTimeSearchBar
@@ -692,6 +706,7 @@ export const Home = () => {
                         selectedService ? [selectedService.id] : []
                       }
                       projectId={selectedProject}
+                      projectArchitecture={projectArchitecture}
                       onOpenInsight={handleOpenInsightFromChat}
                       isExpanded={isChatbotExpanded}
                       onToggleExpand={handleChatbotToggle}
@@ -795,6 +810,7 @@ export const Home = () => {
                           selectedService ? [selectedService.id] : []
                         }
                         projectId={selectedProject}
+                        projectArchitecture={projectArchitecture}
                         onOpenInsight={handleOpenInsightFromChat}
                         isExpanded={isChatbotExpanded}
                         onToggleExpand={handleChatbotToggle}

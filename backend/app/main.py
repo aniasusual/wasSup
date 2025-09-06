@@ -37,7 +37,15 @@ async def health_check():
 async def startup_event():
     """Startup tasks when the application starts."""
     from .services.session_cleanup import start_cleanup_task
+    from .core.database import connect_to_mongo
     start_cleanup_task()
+    await connect_to_mongo()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown tasks when the application stops."""
+    from .core.database import close_mongo_connection
+    await close_mongo_connection()
 
 
 if __name__ == "__main__":
