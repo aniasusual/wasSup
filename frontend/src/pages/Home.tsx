@@ -13,6 +13,7 @@ import DateTimeSearchBar from "../components/DateTimeSearchBar";
 import { ProjectArchitecturePrompt } from "../components/ProjectArchitecturePrompt";
 import toast from "react-hot-toast";
 import { parseGCPErrorMessage } from "../utils/errorUtils";
+import axios from "axios";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -119,33 +120,25 @@ export const Home = () => {
   const fetchProjects = async () => {
     if (!token) return;
     try {
-      const response = await fetch("/api/v1/logs/projects", {
-        method: "GET",
+      const response = await axios.get("/api/v1/logs/projects", {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
       });
-      if (response.ok) {
-        const data = await response.json();
-        setProjects(data.projects || []);
-        if (data.projects && data.projects.length > 0) {
-          setSelectedProject(data.projects[0].project_id);
-        }
-      } else {
-        // Check for authentication errors
-        if (response.status === 401 || response.status === 403) {
-          forceLogout("Authentication token expired or invalid");
-          return;
-        }
-
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.detail || response.statusText;
-        const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
-        toast.error(`Failed to fetch projects: ${userFriendlyMessage}`);
+      const data = response.data;
+      setProjects(data.projects || []);
+      if (data.projects && data.projects.length > 0) {
+        setSelectedProject(data.projects[0].project_id);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching projects:", error);
+
+      // Check for authentication errors
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        forceLogout("Authentication token expired or invalid");
+        return;
+      }
 
       // Check if it's an authentication error
       if (
@@ -155,8 +148,7 @@ export const Home = () => {
         return; // Already handled by forceLogout
       }
 
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error.response?.data?.detail || error.response?.statusText || error.message || String(error);
       const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
       toast.error(`Failed to fetch projects: ${userFriendlyMessage}`);
     }
@@ -505,7 +497,7 @@ export const Home = () => {
   }, []);
 
   return (
-    <div className="bg-gray-950 h-screen flex flex-col overflow-hidden">
+    <div className="bg-gray-950 min-h-screen flex flex-col">
       {/* Header */}
       <header className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-800/50 sticky top-0 z-50">
         <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
@@ -593,57 +585,54 @@ export const Home = () => {
         </div>
       </header>
 
-      {/* Provider-specific filters - only show when provider is selected */}
+      {/* Filters and Controls Section - only show when provider is selected */}
       {selectedProvider && (
-        <ProviderFilters
-          selectedProvider={selectedProvider}
-          selectedProject={selectedProject}
-          setSelectedProject={setSelectedProject}
-          projects={projects}
-          selectedService={selectedService}
-          onServiceSelect={handleServiceSelect}
-        />
-      )}
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3 space-y-3 sm:space-y-4">
+          {/* Provider-specific filters */}
+          <ProviderFilters
+            selectedProvider={selectedProvider}
+            selectedProject={selectedProject}
+            setSelectedProject={setSelectedProject}
+            projects={projects}
+            selectedService={selectedService}
+            onServiceSelect={handleServiceSelect}
+          />
 
-      {/* Project Architecture Prompt - only show when project is selected */}
-      {selectedProvider && selectedProject && (
-        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
-          <ProjectArchitecturePrompt
-            projectId={selectedProject}
-            onArchitectureChange={setProjectArchitecture}
-            className="w-full"
+          {/* Project Architecture Prompt - only show when project is selected */}
+          {selectedProject && (
+            <ProjectArchitecturePrompt
+              projectId={selectedProject}
+              onArchitectureChange={setProjectArchitecture}
+              className="w-full"
+            />
+          )}
+
+          {/* Modern Search and Date/Time Filter Bar */}
+          <DateTimeSearchBar
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+            isLoading={isLoading}
+            onSearch={handleSearch}
+            onTimeRangeChange={handleTimeRangeChange}
           />
         </div>
       )}
 
-      {/* Modern Search and Date/Time Filter Bar - only show when provider is selected */}
-      {selectedProvider && (
-        <DateTimeSearchBar
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          startDate={startDate}
-          setStartDate={setStartDate}
-          endDate={endDate}
-          setEndDate={setEndDate}
-          isLoading={isLoading}
-          onSearch={handleSearch}
-          onTimeRangeChange={handleTimeRangeChange}
-        />
-      )}
-
       {/* Tabs */}
       {tabs.length > 0 && (
-        <div className="">
-          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
-            <LogTabs
-              tabs={tabs}
-              activeTabId={activeTabId}
-              onTabSelect={handleTabSelect}
-              onTabClose={handleTabClose}
-              onOpenQueryBuilder={handleOpenQueryBuilder}
-              onRefreshTab={refreshTabById}
-            />
-          </div>
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
+          <LogTabs
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onTabSelect={handleTabSelect}
+            onTabClose={handleTabClose}
+            onOpenQueryBuilder={handleOpenQueryBuilder}
+            onRefreshTab={refreshTabById}
+          />
         </div>
       )}
 
@@ -673,10 +662,10 @@ export const Home = () => {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3 min-h-0">
+      <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
         {!selectedProvider ? (
           // Show welcome message when no provider is selected
-          <div className="flex flex-col items-center justify-center h-full">
+          <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
             <div className="w-16 h-16 sm:w-20 sm:h-20 xl:w-24 xl:h-24 bg-gray-800 rounded-full flex items-center justify-center mb-6 sm:mb-8 xl:mb-10">
               <span className="text-2xl sm:text-3xl xl:text-4xl">☁️</span>
             </div>
@@ -694,12 +683,12 @@ export const Home = () => {
             </div>
           </div>
         ) : (
-          <div className="h-full">
+          <div className="w-full">
             {isChatbotExpanded ? (
               /* Full-screen Chatbot when expanded */
-              <div className="h-full">
-                <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg h-full overflow-hidden">
-                  <div className="h-full flex flex-col min-h-0">
+              <div className="w-full">
+                <div className="glass-card gradient-border hover-card h-[75vh] animate-fade-in">
+                  <div className="h-full flex flex-col">
                     <Chatbot
                       key="chatbot-main" // Use same key to maintain component identity
                       selectedServices={
@@ -716,11 +705,11 @@ export const Home = () => {
               </div>
             ) : (
               /* Normal layout with logs and chatbot side by side */
-              <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-3 sm:gap-4 xl:gap-6 2xl:gap-8 h-full">
+              <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-3 sm:gap-4 xl:gap-6 2xl:gap-8 animate-fade-in">
                 {/* Logs Section */}
-                <div className="xl:col-span-13 2xl:col-span-13 flex flex-col min-h-0">
+                <div className="xl:col-span-13 2xl:col-span-13 flex flex-col">
                   {/* Logs Viewer Card */}
-                  <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden flex-1 flex flex-col min-h-0">
+                  <div className="glass-card gradient-border hover-card flex flex-col h-[70vh]">
                     <div className="px-4 sm:px-6 xl:px-8 py-2 sm:py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
                         <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4">
@@ -752,7 +741,7 @@ export const Home = () => {
                             )}
                         </div>
                         {isLoading && (
-                          <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
+                          <div className="flex items-center space-x-2 xl:space-x-3 text-slate-400">
                             <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
                             <span className="text-xs sm:text-sm xl:text-base">
                               Loading logs...
@@ -766,7 +755,7 @@ export const Home = () => {
                         !tabLogs[activeTabId] ||
                         tabLogs[activeTabId].length === 0) &&
                       !isLoading ? (
-                        <div className="flex-1 flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
+                        <div className="flex-1 flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8 min-h-[40vh]">
                           <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
                             <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
                           </div>
@@ -785,6 +774,18 @@ export const Home = () => {
                           onScroll={handleScroll}
                           className="flex-1 overflow-y-auto min-h-0"
                         >
+                          {/* Loading skeleton overlay when fetching initial batch */}
+                          {isLoading && (!tabLogs[activeTabId] || tabLogs[activeTabId].length === 0) && (
+                            <div className="p-4 space-y-3">
+                              {Array.from({ length: 6 }).map((_, i) => (
+                                <div key={i} className="glass-card p-4 border-l-4 border-blue-500/40">
+                                  <div className="h-3 w-36 rounded skeleton mb-3" />
+                                  <div className="h-3 w-3/4 rounded skeleton mb-2" />
+                                  <div className="h-3 w-2/3 rounded skeleton" />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <EnhancedLogViewer
                             logs={tabLogs[activeTabId] || []}
                           />
@@ -801,9 +802,9 @@ export const Home = () => {
                 </div>
 
                 {/* Chatbot Section */}
-                <div className="xl:col-span-7 2xl:col-span-7 flex flex-col min-h-0">
-                  <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg flex-1 flex flex-col min-h-0 xl:sticky xl:top-24 overflow-hidden">
-                    <div className="h-full flex flex-col min-h-0">
+                <div className="xl:col-span-7 2xl:col-span-7 flex flex-col">
+                  <div className="glass-card gradient-border hover-card flex flex-col h-[70vh] animate-slide-up">
+                    <div className="h-full flex flex-col">
                       <Chatbot
                         key="chatbot-main" // Use same key to maintain component identity
                         selectedServices={
