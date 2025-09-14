@@ -1,4 +1,5 @@
 import { useAuth } from '../contexts/Auth';
+import axios from 'axios';
 
 export interface ProjectArchitecture {
   id: string;
@@ -26,74 +27,64 @@ export const useProjectArchitectureService = () => {
   const { token } = useAuth();
 
   const createOrUpdateArchitecture = async (data: ProjectArchitectureCreate): Promise<ProjectArchitecture> => {
-    const response = await fetch('/api/v1/project-architecture/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to create/update project architecture');
+    try {
+      const response = await axios.post('/api/v1/project-architecture/', data, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || 'Failed to create/update project architecture';
+      throw new Error(errorMessage);
     }
-
-    return response.json();
   };
 
   const getArchitectureByProject = async (projectId: string): Promise<ProjectArchitecture | null> => {
-    const response = await fetch(`/api/v1/project-architecture/project/${projectId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (response.status === 404) {
-      return null;
+    try {
+      const response = await axios.get(`/api/v1/project-architecture/project/${projectId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return null;
+      }
+      const errorMessage = error.response?.data?.detail || 'Failed to get project architecture';
+      throw new Error(errorMessage);
     }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to get project architecture');
-    }
-
-    return response.json();
   };
 
   const updateArchitecture = async (projectId: string, data: ProjectArchitectureUpdate): Promise<ProjectArchitecture> => {
-    const response = await fetch(`/api/v1/project-architecture/project/${projectId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to update project architecture');
+    try {
+      const response = await axios.put(`/api/v1/project-architecture/project/${projectId}`, data, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || 'Failed to update project architecture';
+      throw new Error(errorMessage);
     }
-
-    return response.json();
   };
 
   const deleteArchitecture = async (projectId: string): Promise<void> => {
-    const response = await fetch(`/api/v1/project-architecture/project/${projectId}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to delete project architecture');
+    try {
+      await axios.delete(`/api/v1/project-architecture/project/${projectId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || 'Failed to delete project architecture';
+      throw new Error(errorMessage);
     }
   };
 
