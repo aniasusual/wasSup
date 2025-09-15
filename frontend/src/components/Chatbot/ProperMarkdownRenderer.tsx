@@ -37,15 +37,17 @@ export const ProperMarkdownRenderer: React.FC<ProperMarkdownRendererProps> = ({
   return (
     <div
       className={
-        `prose prose-slate prose-invert max-w-none ` +
-        `prose-headings:text-white prose-headings:font-bold ` +
-        `prose-p:text-slate-200 prose-p:leading-relaxed ` +
-        `prose-strong:text-blue-200 prose-a:text-blue-400 ` +
-        `prose-code:text-purple-300 prose-code:bg-slate-800/60 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded ` +
-        `prose-blockquote:border-l-blue-500 prose-blockquote:bg-slate-800/30 prose-blockquote:rounded-r-xl ` +
-        `prose-pre:bg-slate-900/60 prose-pre:border prose-pre:border-slate-700/50 prose-pre:rounded-xl ` +
-        `prose-table:overflow-hidden prose-th:text-slate-200 prose-td:text-slate-200 ` +
-        className
+        // Avoid relying on Tailwind Typography (prose) since it's not installed
+        // Provide sensible defaults for dark UI and readable spacing
+        [
+          "max-w-none",
+          "text-slate-200",
+          "leading-relaxed",
+          "space-y-3",
+          "break-words",
+          "[overflow-wrap:anywhere]",
+          className,
+        ].join(" ")
       }
     >
       <ReactMarkdown
@@ -67,6 +69,13 @@ export const ProperMarkdownRenderer: React.FC<ProperMarkdownRendererProps> = ({
             <p
               className="text-slate-200 leading-relaxed my-3 whitespace-pre-wrap"
               {...props}
+            />
+          ),
+          img: ({ node, ...props }) => (
+            <img
+              {...props}
+              className="max-w-full h-auto rounded-lg border border-slate-700/50 shadow-sm my-3"
+              loading="lazy"
             />
           ),
           a: ({ node, ...props }) => (
@@ -91,6 +100,9 @@ export const ProperMarkdownRenderer: React.FC<ProperMarkdownRendererProps> = ({
               className="border-l-4 border-blue-500/70 bg-slate-800/40 pl-4 pr-3 py-2 rounded-r-xl my-4"
               {...props}
             />
+          ),
+          hr: () => (
+            <hr className="my-6 border-t border-slate-700/60" />
           ),
           table: ({ node, ...props }) => (
             <div className="my-4 overflow-x-auto">

@@ -114,6 +114,40 @@ class QueryClassification(BaseModel):
     )
 
 
+class ParsedArchitecture(BaseModel):
+    """Pydantic model for parsed architecture output."""
+    
+    services: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of services identified in the architecture"
+    )
+    
+    dependencies: List[str] = Field(
+        default_factory=list,
+        description="Service dependencies and relationships"
+    )
+    
+    data_flows: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="Data flow patterns between services"
+    )
+    
+    infrastructure: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Infrastructure configuration details"
+    )
+    
+    technologies: List[str] = Field(
+        default_factory=list,
+        description="Technologies and frameworks used"
+    )
+    
+    patterns: List[str] = Field(
+        default_factory=list,
+        description="Architectural patterns identified"
+    )
+
+
 class LLMService:
     """
     Centralized LLM service for natural language processing tasks.
@@ -129,12 +163,15 @@ class LLMService:
         Args:
             api_key: Google Gemini API key (if not provided, uses environment variable)
         """
+        logger.info("Initializing LLM Service")
+        
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         
         if not self.api_key:
             logger.warning("GEMINI_API_KEY not found. LLM features will be disabled.")
             self.llm = None
         else:
+            logger.info("Initializing Gemini 1.5 Flash model...")
             # Initialize Gemini model
             self.llm = ChatGoogleGenerativeAI(
                 model="gemini-1.5-flash",
@@ -143,12 +180,14 @@ class LLMService:
                 max_output_tokens=2048,
                 convert_system_message_to_human=True
             )
+            logger.info("Gemini model initialized")
             
             # Initialize output parsers
             self.entity_parser = JsonOutputParser(pydantic_object=ExtractedEntities)
             self.classification_parser = JsonOutputParser(pydantic_object=QueryClassification)
+            self.architecture_parser = JsonOutputParser(pydantic_object=ParsedArchitecture)
             
-            logger.info("LLM service initialized with Gemini 1.5 Flash")
+            logger.info("LLM service fully initialized")
     
     def _create_entity_extraction_prompt(self) -> ChatPromptTemplate:
         """Create the prompt template for entity extraction."""
@@ -230,6 +269,74 @@ Provide your analysis in the specified JSON format.""")
         
         return prompt
     
+    def _create_architecture_parsing_prompt(self) -> ChatPromptTemplate:
+        """Create the prompt template for architecture parsing."""
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an expert at analyzing and parsing GCP (Google Cloud Platform) project architecture descriptions. 
+Your task is to extract structured information from architecture descriptions to understand the system's components, relationships, and patterns.
+
+Focus on identifying:
+1. Services: GCP services like cloud_run, cloud_sql, gce_instance, gke_cluster, app_engine, cloud_functions, load_balancer, cloud_storage, pubsub, bigquery, firestore, etc.
+2. Dependencies: Service-to-service relationships, data dependencies, and communication patterns
+3. Data Flows: How data moves between services, APIs, and external systems
+4. Infrastructure: Network configuration, security settings, scaling policies, etc.
+5. Technologies: Frameworks, languages, databases, messaging systems, etc.
+6. Patterns: Architectural patterns like microservices, event-driven, serverless, etc.
+
+Be thorough and extract all relevant architectural information that would be useful for log analysis and troubleshooting."""),
+            
+            ("human", """Parse this GCP project architecture description:
+
+Architecture Description: "{architecture_prompt}"
+
+{format_instructions}
+
+Provide your analysis in the specified JSON format.""")
+        ])
+        
+        return prompt
+    
+    async def parse_architecture(self, architecture_prompt: str) -> Dict[str, Any]:
+        """
+        Parse project architecture description using LLM.
+        
+        Args:
+            architecture_prompt: Raw architecture description
+            
+        Returns:
+            Dictionary containing parsed architecture information
+        """
+        logger.info("Starting architecture parsing")
+        
+        if not self.llm:
+            logger.warning("LLM not available, cannot parse architecture")
+            logger.error("LLM not available, cannot parse architecture")
+            raise RuntimeError("LLM service not available for architecture parsing")
+        
+        try:
+            logger.debug("Creating architecture parsing prompt...")
+            prompt = self._create_architecture_parsing_prompt()
+            chain = prompt | self.llm | self.architecture_parser
+            
+            # Add format instructions to the prompt
+            format_instructions = self.architecture_parser.get_format_instructions()
+            
+            logger.debug("Calling LLM for architecture parsing...")
+            result = await chain.ainvoke({
+                "architecture_prompt": architecture_prompt,
+                "format_instructions": format_instructions
+            })
+            
+            logger.info("LLM architecture parsing completed")
+            logger.debug(f"LLM parsed architecture: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in LLM architecture parsing: {str(e)}")
+            logger.info("Falling back to basic parsing")
+            return self._fallback_architecture_parsing(architecture_prompt)
+    
     async def extract_entities(self, question: str) -> Dict[str, Any]:
         """
         Extract entities from a user query using LLM.
@@ -240,28 +347,34 @@ Provide your analysis in the specified JSON format.""")
         Returns:
             Dictionary containing extracted entities
         """
+        logger.info("Starting entity extraction")
+        
         if not self.llm:
+            logger.warning("LLM not available, falling back to basic extraction")
             logger.warning("LLM not available, falling back to basic extraction")
             return self._fallback_entity_extraction(question)
         
         try:
+            logger.debug("Creating entity extraction prompt...")
             prompt = self._create_entity_extraction_prompt()
             chain = prompt | self.llm | self.entity_parser
             
             # Add format instructions to the prompt
             format_instructions = self.entity_parser.get_format_instructions()
             
+            logger.debug("Calling LLM for entity extraction...")
             result = await chain.ainvoke({
                 "question": question,
                 "format_instructions": format_instructions
             })
             
+            logger.info("LLM extraction completed")
             logger.debug(f"LLM extracted entities: {result}")
             return result
             
         except Exception as e:
             logger.error(f"Error in LLM entity extraction: {str(e)}")
-            logger.info("Falling back to basic extraction")
+            logger.info("Falling back to basic extraction...")
             return self._fallback_entity_extraction(question)
     
     async def classify_query(self, question: str, entities: Dict[str, Any]) -> Dict[str, Any]:
@@ -275,29 +388,35 @@ Provide your analysis in the specified JSON format.""")
         Returns:
             Dictionary containing classification results
         """
+        logger.info("Starting query classification")
+        
         if not self.llm:
+            logger.warning("LLM not available, falling back to basic classification")
             logger.warning("LLM not available, falling back to basic classification")
             return self._fallback_query_classification(question, entities)
         
         try:
+            logger.debug("Creating classification prompt...")
             prompt = self._create_classification_prompt()
             chain = prompt | self.llm | self.classification_parser
             
             # Add format instructions to the prompt
             format_instructions = self.classification_parser.get_format_instructions()
             
+            logger.debug("Calling LLM for query classification...")
             result = await chain.ainvoke({
                 "question": question,
                 "entities": json.dumps(entities, indent=2, default=str),
                 "format_instructions": format_instructions
             })
             
+            logger.info("LLM classification completed")
             logger.debug(f"LLM classified query: {result}")
             return result
             
         except Exception as e:
             logger.error(f"Error in LLM query classification: {str(e)}")
-            logger.info("Falling back to basic classification")
+            logger.info("Falling back to basic classification...")
             return self._fallback_query_classification(question, entities)
     
     async def detect_missing_information(self, question: str, entities: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
@@ -575,3 +694,114 @@ Provide your analysis focusing on practical investigation needs.""")
             "analysis": f"Rule-based analysis detected {len(missing_info)} missing information categories",
             "needs_clarification": len(missing_info) > 0
         }
+    
+    def _fallback_architecture_parsing(self, architecture_prompt: str) -> Dict[str, Any]:
+        """
+        Fallback architecture parsing using regex patterns.
+        
+        Args:
+            architecture_prompt: Raw architecture description
+            
+        Returns:
+            Dictionary containing parsed architecture information
+        """
+        import re
+        
+        prompt_lower = architecture_prompt.lower()
+        
+        parsed = {
+            "services": [],
+            "dependencies": [],
+            "data_flows": [],
+            "infrastructure": {},
+            "technologies": [],
+            "patterns": []
+        }
+        
+        # GCP service patterns
+        gcp_service_patterns = {
+            'cloud_run': r'\b(?:cloud.?run|cloudrun|run|serverless|container)\b',
+            'cloud_sql': r'\b(?:cloud.?sql|cloudsql|sql|database|db|mysql|postgres)\b',
+            'gce_instance': r'\b(?:gce|compute.?engine|compute.?instance|vm|instance|virtual.?machine)\b',
+            'gke_cluster': r'\b(?:gke|kubernetes|k8s|cluster|pod|container.?orchestration)\b',
+            'app_engine': r'\b(?:app.?engine|gae|appengine)\b',
+            'cloud_functions': r'\b(?:cloud.?functions|functions|gcf|serverless.?function)\b',
+            'load_balancer': r'\b(?:load.?balancer|lb|ingress|traffic.?manager)\b',
+            'cloud_storage': r'\b(?:cloud.?storage|storage|gcs|bucket|object.?storage)\b',
+            'pubsub': r'\b(?:pub.?sub|pubsub|message.?queue|event.?stream)\b',
+            'bigquery': r'\b(?:bigquery|big.?query|data.?warehouse|analytics)\b',
+            'firestore': r'\b(?:firestore|firebase|document.?database|nosql)\b',
+            'cloud_logging': r'\b(?:cloud.?logging|logging|logs|monitoring)\b',
+            'cloud_monitoring': r'\b(?:cloud.?monitoring|monitoring|metrics|observability)\b'
+        }
+        
+        # Extract GCP services
+        for service_type, pattern in gcp_service_patterns.items():
+            if re.search(pattern, prompt_lower):
+                parsed["services"].append({
+                    "type": service_type,
+                    "name": service_type.replace("_", " ").title(),
+                    "detected_by": "regex_pattern"
+                })
+        
+        # Technology patterns
+        tech_patterns = {
+            'docker': r'\b(?:docker|container)\b',
+            'kubernetes': r'\b(?:kubernetes|k8s|kube)\b',
+            'microservices': r'\b(?:microservice|micro.?service)\b',
+            'api_gateway': r'\b(?:api.?gateway|gateway)\b',
+            'message_queue': r'\b(?:message.?queue|queue|messaging)\b',
+            'cache': r'\b(?:cache|caching|redis|memcached)\b',
+            'cdn': r'\b(?:cdn|content.?delivery)\b',
+            'react': r'\b(?:react|reactjs)\b',
+            'nodejs': r'\b(?:nodejs|node\.?js)\b',
+            'python': r'\b(?:python|django|flask)\b',
+            'java': r'\b(?:java|spring|springboot)\b'
+        }
+        
+        for tech, pattern in tech_patterns.items():
+            if re.search(pattern, prompt_lower):
+                parsed["technologies"].append(tech)
+        
+        # Dependency patterns
+        dependency_patterns = [
+            r'(?:depends on|depends upon|uses|connects to|communicates with)\s+([a-zA-Z0-9\s\-_]+)',
+            r'(?:calls|invokes|triggers)\s+([a-zA-Z0-9\s\-_]+)',
+            r'(?:sends data to|receives data from)\s+([a-zA-Z0-9\s\-_]+)'
+        ]
+        
+        for pattern in dependency_patterns:
+            matches = re.findall(pattern, prompt_lower)
+            parsed["dependencies"].extend([match.strip() for match in matches])
+        
+        # Data flow patterns
+        flow_patterns = [
+            r'(?:data flows? from|traffic flows? from)\s+([a-zA-Z0-9\s\-_]+)\s+(?:to|into)\s+([a-zA-Z0-9\s\-_]+)',
+            r'([a-zA-Z0-9\s\-_]+)\s+(?:sends|transmits|forwards)\s+(?:to|data to)\s+([a-zA-Z0-9\s\-_]+)'
+        ]
+        
+        for pattern in flow_patterns:
+            matches = re.findall(pattern, prompt_lower)
+            for match in matches:
+                if len(match) == 2:
+                    parsed["data_flows"].append({
+                        "source": match[0].strip(),
+                        "target": match[1].strip()
+                    })
+        
+        # Architectural patterns
+        pattern_keywords = {
+            'microservices': r'\b(?:microservice|micro.?service)\b',
+            'serverless': r'\b(?:serverless|function.?as.?a.?service|faas)\b',
+            'event_driven': r'\b(?:event.?driven|event.?driven.?architecture)\b',
+            'api_first': r'\b(?:api.?first|api.?driven)\b',
+            'caching': r'\b(?:caching|cache.?first)\b',
+            'load_balancing': r'\b(?:load.?balancing|load.?balancer)\b'
+        }
+        
+        for pattern_name, pattern in pattern_keywords.items():
+            if re.search(pattern, prompt_lower):
+                parsed["patterns"].append(pattern_name)
+        
+        logger.debug(f"Fallback architecture parsing result: {parsed}")
+        return parsed

@@ -43,7 +43,6 @@ export const AIMessage: React.FC<AIMessageProps> = ({
                   key={index}
                   className="px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/60 text-slate-200 text-xs rounded-md border border-slate-700/60 transition-colors"
                   onClick={() => {
-                    console.log("Action clicked:", action);
                   }}
                 >
                   {action.label}

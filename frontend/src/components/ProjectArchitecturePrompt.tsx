@@ -60,7 +60,6 @@ export const ProjectArchitecturePrompt: React.FC<ProjectArchitecturePromptProps>
         setIsEditing(true); // Start editing if no architecture exists
       }
     } catch (error) {
-      console.error('Error loading architecture:', error);
       toast.error('Failed to load project architecture');
     } finally {
       setIsLoading(false);
@@ -87,7 +86,6 @@ export const ProjectArchitecturePrompt: React.FC<ProjectArchitecturePromptProps>
       onArchitectureChange?.(arch.architecture_prompt);
       toast.success('Project architecture saved successfully');
     } catch (error) {
-      console.error('Error saving architecture:', error);
       toast.error('Failed to save project architecture');
     } finally {
       setIsSaving(false);

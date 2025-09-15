@@ -14,6 +14,7 @@ import { ProjectArchitecturePrompt } from "../components/ProjectArchitectureProm
 import toast from "react-hot-toast";
 import { parseGCPErrorMessage } from "../utils/errorUtils";
 import axios from "axios";
+import { Link } from "react-router-dom";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -81,7 +82,6 @@ export const Home = () => {
   // Handle time range changes from slider (debounced)
   const handleTimeRangeChange = useCallback(
     (newStartDate: string, newEndDate: string) => {
-      console.log("Time range changed:", { newStartDate, newEndDate });
       setPendingSearch({
         searchQuery,
         startDate: newStartDate,
@@ -94,6 +94,41 @@ export const Home = () => {
   const [logCount, setLogCount] = useState(100); // Add log count state
   const [isChatbotExpanded, setIsChatbotExpanded] = useState(false); // Add chatbot expand state
   const [projectArchitecture, setProjectArchitecture] = useState<string>(""); // Project architecture state
+
+  // Resizable splitter state for logs/chat widths (xl+ screens)
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [splitPct, setSplitPct] = useState<number>(65); // logs width percent
+  const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
+  const onMouseDownSplit = (e: React.MouseEvent) => {
+    setIsDraggingSplit(true);
+    e.preventDefault();
+  };
+  useEffect(() => {
+    if (!isDraggingSplit) return;
+    const handleMove = (e: MouseEvent) => {
+      const rect = splitContainerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      let pct = (x / rect.width) * 100;
+      pct = Math.max(35, Math.min(80, pct)); // clamp
+      setSplitPct(pct);
+    };
+    const handleUp = () => {
+      setIsDraggingSplit(false);
+      document.body.style.cursor = "";
+      (document.body.style as any).userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    (document.body.style as any).userSelect = "none";
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+      document.body.style.cursor = "";
+      (document.body.style as any).userSelect = "";
+    };
+  }, [isDraggingSplit]);
 
   // Initialize pending search with default time values
   useEffect(() => {
@@ -132,7 +167,7 @@ export const Home = () => {
         setSelectedProject(data.projects[0].project_id);
       }
     } catch (error: any) {
-      console.error("Error fetching projects:", error);
+      // Error fetching projects
 
       // Check for authentication errors
       if (error.response?.status === 401 || error.response?.status === 403) {
@@ -278,7 +313,7 @@ export const Home = () => {
     if (tab) {
       setOpenQueryBuilderTabId(tabId);
     } else {
-      console.error(`Tab with id ${tabId} not found`);
+      // Tab not found
     }
   };
 
@@ -343,16 +378,6 @@ export const Home = () => {
     if (!selectedProvider || !selectedProject || !tab) return;
     setIsLoading(true);
 
-    console.log("fetchLogsForTab called with:", {
-      tabId: tab.id,
-      tabQuery: tab.query,
-      resourceType: tab.filters.resourceType,
-      pendingSearch: {
-        searchQuery: pendingSearch.searchQuery,
-        startDate: pendingSearch.startDate,
-        endDate: pendingSearch.endDate,
-      },
-    });
 
     try {
       const res = await fetchLogs({
@@ -376,7 +401,7 @@ export const Home = () => {
         [tab.id]: nextToken,
       }));
     } catch (e) {
-      console.error("Error fetching logs:", e);
+      // Error fetching logs
 
       // Check if it's an authentication error
       if (e instanceof Error && e.message.includes("Authentication failed")) {
@@ -429,7 +454,7 @@ export const Home = () => {
         [activeTabId]: next,
       }));
     } catch (e) {
-      console.error("Error loading more logs:", e);
+      // Error loading more logs
     } finally {
       setIsLoadingMore(false);
     }
@@ -505,9 +530,9 @@ export const Home = () => {
             {/* Logo and Title Section */}
             <div className="flex items-center justify-between sm:justify-start">
               <div className="flex items-center space-x-2 sm:space-x-4">
-                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                  Recce
-                </h1>
+                <Link to="/" className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  <img src="/logo.png" alt="Recce" className="w-40 h-40" />
+                </Link>
                 <div className="hidden sm:block h-6 w-px bg-gray-700"></div>
                 <div className="hidden sm:block">
                   <span className="text-xs sm:text-sm text-gray-400">
@@ -666,9 +691,9 @@ export const Home = () => {
         {!selectedProvider ? (
           // Show welcome message when no provider is selected
           <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 xl:w-24 xl:h-24 bg-gray-800 rounded-full flex items-center justify-center mb-6 sm:mb-8 xl:mb-10">
-              <span className="text-2xl sm:text-3xl xl:text-4xl">☁️</span>
-            </div>
+            {/* <div className="w-16 h-16 sm:w-20 sm:h-20 xl:w-24 xl:h-24 bg-gray-800 rounded-full flex items-center justify-center mb-6 sm:mb-8 xl:mb-10"> */}
+              <img src="/logo.png" alt="Recce" className="w-56 h-56" />
+            {/* </div> */}
             <h2 className="text-xl sm:text-2xl xl:text-3xl font-semibold text-white mb-3 sm:mb-4 xl:mb-6 text-center">
               Welcome to Recce
             </h2>
@@ -705,9 +730,13 @@ export const Home = () => {
               </div>
             ) : (
               /* Normal layout with logs and chatbot side by side */
-              <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-3 sm:gap-4 xl:gap-6 2xl:gap-8 animate-fade-in">
+              <div
+                ref={splitContainerRef}
+                className="grid grid-cols-1 xl:grid-cols-[var(--left)_12px_1fr] gap-3 sm:gap-4 xl:gap-6 2xl:gap-8 animate-fade-in"
+                style={{ ['--left' as any]: `${splitPct}%` }}
+              >
                 {/* Logs Section */}
-                <div className="xl:col-span-13 2xl:col-span-13 flex flex-col">
+                <div className="flex flex-col">
                   {/* Logs Viewer Card */}
                   <div className="glass-card gradient-border hover-card flex flex-col h-[70vh]">
                     <div className="px-4 sm:px-6 xl:px-8 py-2 sm:py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
@@ -801,8 +830,21 @@ export const Home = () => {
                   </div>
                 </div>
 
+                {/* Splitter Handle (xl and up) */}
+                <div className="hidden xl:block select-none">
+                  <div
+                    className={`h-full w-2 rounded bg-slate-700/60 hover:bg-slate-500/70 cursor-col-resize transition-colors ${isDraggingSplit ? 'bg-slate-500/80' : ''}`}
+                    onMouseDown={onMouseDownSplit}
+                    title="Drag to resize"
+                  >
+                    <div className="relative h-full">
+                      <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-1 h-14 bg-slate-400/60 rounded"></div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Chatbot Section */}
-                <div className="xl:col-span-7 2xl:col-span-7 flex flex-col">
+                <div className="flex flex-col">
                   <div className="glass-card gradient-border hover-card flex flex-col h-[70vh] animate-slide-up">
                     <div className="h-full flex flex-col">
                       <Chatbot

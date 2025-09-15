@@ -10,8 +10,17 @@ import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from ....models.agent import AgentState, NodeResult, WorkflowConfig, QueryInput
-from .llm_service import LLMService
+try:
+    # Try relative imports first (for normal usage)
+    from ....models.agent import AgentState, NodeResult, WorkflowConfig, QueryInput
+    from .llm_service import LLMService
+except ImportError:
+    # Fall back to absolute imports (for LangGraph Studio)
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
+    from app.models.agent import AgentState, NodeResult, WorkflowConfig, QueryInput
+    from app.services.agent.core.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +92,14 @@ class UserQueryInputNode:
         start_time = datetime.utcnow()
         
         try:
+            
             self.logger.info(f"Processing user query: {state.get('question', '')[:100]}...")
             
             # Validate and process the input
             validation_result = self._validate_input(state)
             if not validation_result.success:
                 return self._update_state_with_error(state, validation_result.error)
+            
             
             # Extract entities using LLM (with fallback to regex)
             extracted_entities = await self._extract_entities_nlp(state["question"])
@@ -142,6 +153,7 @@ class UserQueryInputNode:
             })
             
             execution_time = (datetime.utcnow() - start_time).total_seconds()
+            
             self.logger.info(f"User query processing completed in {execution_time:.3f}s")
             
             return updated_state
@@ -160,6 +172,7 @@ class UserQueryInputNode:
         Returns:
             NodeResult indicating validation success/failure
         """
+        
         try:
             # Check required fields
             if not state.get("question", "").strip():
@@ -190,18 +203,15 @@ class UserQueryInputNode:
             
             # Validate project ID format (basic GCP project ID validation)
             project_id = state["project_id"]
-            if not project_id or not re.match(r'^[a-z][a-z0-9-]{4,28}[a-z0-9]$', project_id):
+            # GCP project IDs: 6-30 characters, lowercase letters, numbers, hyphens
+            # Must start with a letter, can end with letter or number
+            if (not project_id or 
+                len(project_id) < 6 or 
+                len(project_id) > 30 or
+                not re.match(r'^[a-z][a-z0-9-]*[a-z0-9]$', project_id)):
                 return NodeResult(
                     success=False,
                     error="Invalid GCP project ID format"
-                )
-            
-            # Validate limit if provided
-            limit = state.get("limit", 1000)
-            if not isinstance(limit, int) or limit < 1 or limit > 10000:
-                return NodeResult(
-                    success=False,
-                    error="Limit must be an integer between 1 and 10000"
                 )
             
             return NodeResult(
@@ -226,12 +236,13 @@ class UserQueryInputNode:
         Returns:
             Dictionary of extracted entities
         """
+        
         try:
             # Use LLM service for entity extraction
             entities = await self.llm_service.extract_entities(question)
             
             # Convert LLM output to expected format
-            return {
+            formatted_entities = {
                 "services": {f"resource.type={service}": True for service in entities.get("services", [])},
                 "severities": entities.get("severities", []),
                 "time_indicators": entities.get("time_indicators", []),
@@ -241,6 +252,8 @@ class UserQueryInputNode:
                 "resource_identifiers": entities.get("resource_identifiers", []),
                 "intent_indicators": entities.get("intent_indicators", [])
             }
+            
+            return formatted_entities
             
         except Exception as e:
             self.logger.error(f"Error in NLP entity extraction: {str(e)}")
