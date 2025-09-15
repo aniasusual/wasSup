@@ -1,5 +1,5 @@
 import React from "react";
-import { Brain, Sparkles, Zap, History, Maximize2, Minimize2, MessageSquare, Trash2 } from "lucide-react";
+import { Brain, History, Maximize2, Minimize2, MessageSquare, Trash2 } from "lucide-react";
 
 interface Session {
   session_id: string;

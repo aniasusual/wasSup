@@ -36,31 +36,43 @@ For detailed information about the LangGraph implementation, see [docs/LANGGRAPH
 ## Quick Start
 
 ```bash
-docker-compose up -d
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload
-
-cd backend && source venv/bin/activate && uvicorn app.main:app --reload
-
-./scripts/start_filtering_system.sh
 ```
 
-## Testing the LangGraph Agent
+## Project Structure
 
-To test the new agent implementation:
-
-```bash
-cd backend
-python test_langgraph_agent.py
+```
+backend/
+├── app/
+│   ├── api/                    # API routes and endpoints
+│   │   ├── routes/            # Route handlers (auth, logs, agent, project_architecture)
+│   │   ├── helpers/           # Authentication helpers
+│   │   └── data/              # API endpoint configurations
+│   ├── core/                  # Core configuration and database
+│   ├── models/                # Data models
+│   │   ├── agent/             # Agent-specific models
+│   │   └── user.py            # User models
+│   └── services/              # Business logic services
+│       ├── agent/             # LangGraph agent implementation
+│       │   └── core/          # Core agent nodes and workflow
+│       ├── user_service.py    # User management
+│       ├── project_architecture_service.py  # Architecture management
+│       ├── conversation_manager.py          # Conversation state management
+│       └── session_cleanup.py               # Session cleanup tasks
+├── requirements.txt           # Python dependencies
+└── langgraph.json            # LangGraph configuration
 ```
 
-This will run comprehensive tests demonstrating the agent's capabilities including:
+## Features
 
-- Complete vs. incomplete information handling
-- Session management and conversation history
-- Workflow execution and state management
-- Error handling and recovery
+- **LangGraph Agent System**: Intelligent workflow routing and state management
+- **GCP Integration**: Direct integration with Google Cloud Logging and Resource Manager
+- **Authentication**: OAuth2 with Google for secure access
+- **Project Architecture**: Support for storing and analyzing project architecture
+- **Conversation Management**: Persistent conversation state with cleanup
+- **Streaming Responses**: Real-time streaming for long-running operations
 
 ## API Endpoints
 

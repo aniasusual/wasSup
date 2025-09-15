@@ -63,7 +63,6 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
             order_by = query.get("orderBy", "timestamp desc")
             project_id = query["projectId"]
 
-            print("filter_str", filter_str)
 
             logger.info(
                 f"Fetching logs via REST with filter: {filter_str}, page_size: {page_size}, page_token: {page_token}"
@@ -346,10 +345,8 @@ async def gcp_resource_options(
             "Content-Type": "application/json"
         }
         
-        print(f"Making API call to: {endpoint_url}")  # Debug logging
         response = requests.get(endpoint_url, headers=headers, timeout=30)
         
-        print(f"API Response Status: {response.status_code}")  # Debug logging
         
         if not response.ok:
             error_msg = f"API call failed: {response.status_code}"
@@ -362,7 +359,6 @@ async def gcp_resource_options(
         
         try:
             data = response.json()
-            print(f"Raw API Response Keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")  # Debug logging
         except Exception as e:
             return {"options": [], "message": f"Failed to parse JSON response: {str(e)}"}
         
@@ -371,9 +367,7 @@ async def gcp_resource_options(
         if transform_func:
             try:
                 options = transform_func(data)
-                print(f"Transformed options count: {len(options) if isinstance(options, list) else 'Not a list'}")  # Debug logging
             except Exception as e:
-                print(f"Transform function error: {str(e)}")  # Debug logging
                 return {"options": [], "message": f"Transform function failed: {str(e)}"}
         else:
             # If no transform function, try to extract common patterns
@@ -396,7 +390,6 @@ async def gcp_resource_options(
         # Filter out None, empty strings, and ensure all items are strings
         options = [str(opt) for opt in options if opt is not None and str(opt).strip()]
         
-        print(f"Final options: {options[:10]}...")  # Debug logging (first 10 items)
         
         return {
             "options": options, 
@@ -411,6 +404,5 @@ async def gcp_resource_options(
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"Unexpected error in gcp_resource_options: {error_trace}")
         return {"options": [], "message": f"Unexpected error: {str(e)}"}
     

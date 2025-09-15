@@ -22,7 +22,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("check: ", settings.API_V1_STR);
 
 # In-memory storage (use Redis or database in production)
 app.include_router(api_router, prefix=settings.API_V1_STR)

@@ -15,7 +15,6 @@ export const Login = () => {
       const response = await axios.get("/api/v1/auth/login");
       window.location.href = response.data.auth_url;
     } catch (error: any) {
-      console.error("Login error:", error);
       let errorMessage = "Failed to initiate login";
       if (error.response?.data?.detail) {
         errorMessage = error.response.data.detail;

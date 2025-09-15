@@ -9,7 +9,6 @@ import { ChatInput } from "./Chatbot/ChatInput";
 import { EmptyState } from "./Chatbot/EmptyState";
 import { UserMessage } from "./Chatbot/UserMessage";
 import { AIMessage } from "./Chatbot/AIMessage";
-// import { TypingIndicator } from "./Chatbot/TypingIndicator";
 
 type Message = {
   id: number;
@@ -83,7 +82,6 @@ export const Chatbot = ({
       });
       setSessions(response.data.sessions || []);
     } catch (error) {
-      console.error("Error loading sessions:", error);
     }
   };
 
@@ -115,7 +113,6 @@ export const Chatbot = ({
       setCurrentSessionId(sessionId);
       setShowSessions(false);
     } catch (error) {
-      console.error("Error loading session history:", error);
       toast.error("Failed to load session history");
     }
   };
@@ -136,7 +133,6 @@ export const Chatbot = ({
       await loadUserSessions();
       toast.success("Session deleted");
     } catch (error) {
-      console.error("Error deleting session:", error);
       toast.error("Failed to delete session");
     }
   };
@@ -297,7 +293,6 @@ export const Chatbot = ({
                   break;
               }
             } catch (parseError) {
-              console.warn("Failed to parse streaming data:", parseError);
             }
           }
         }
@@ -311,7 +306,6 @@ export const Chatbot = ({
       // Reload sessions to get updated context
       await loadUserSessions();
     } catch (error: any) {
-      console.error("Error generating AI response:", error);
       let errorMessage = "Failed to generate AI response";
       if (error.message) {
         errorMessage = `Network error: ${error.message}`;

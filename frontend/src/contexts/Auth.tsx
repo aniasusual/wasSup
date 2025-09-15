@@ -63,7 +63,6 @@ export const AuthProvider = ({ children }: any) => {
       await axios.get("/auth/logout");
       toast.success("Successfully logged out");
     } catch (error) {
-      console.error("Logout error:", error);
       toast.error(
         `Failed to logout properly: ${
           error instanceof Error ? error.message : String(error)
@@ -79,7 +78,6 @@ export const AuthProvider = ({ children }: any) => {
 
   // Automatic logout for token-related issues
   const forceLogout = (reason: string) => {
-    console.log(`Force logout: ${reason}`);
     localStorage.removeItem("token");
     localStorage.removeItem("accessToken");
     setToken(null);

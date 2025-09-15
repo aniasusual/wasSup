@@ -5,7 +5,7 @@ interface EmptyStateProps {
   currentSessionId: string | null;
 }
 
-export const EmptyState: React.FC<EmptyStateProps> = ({ currentSessionId }) => {
+export const EmptyState: React.FC<EmptyStateProps> = ({ }) => {
   const exampleQueries = [
     {
       query: "Show me **authentication errors** from `cloud_run_revision` services in the last hour",

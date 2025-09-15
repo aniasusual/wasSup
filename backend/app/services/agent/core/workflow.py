@@ -12,8 +12,19 @@ from datetime import datetime
 from langgraph.graph import StateGraph, END
 # Note: Using in-memory checkpointing for now - will implement persistent storage later
 
-from ....models.agent import AgentState, WorkflowConfig, NodeResult
-from .nodes import UserQueryInputNode
+try:
+    # Try relative imports first (for normal usage)
+    from ....models.agent import AgentState, WorkflowConfig, NodeResult
+    from .nodes import UserQueryInputNode
+    from .architecture_loader_node import ArchitectureLoaderNode
+except ImportError:
+    # Fall back to absolute imports (for LangGraph Studio)
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
+    from app.models.agent import AgentState, WorkflowConfig, NodeResult
+    from app.services.agent.core.nodes import UserQueryInputNode
+    from app.services.agent.core.architecture_loader_node import ArchitectureLoaderNode
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +44,11 @@ class GCPLogInvestigationAgent:
         Args:
             config: Workflow configuration settings
         """
+        
         self.config = config or WorkflowConfig()
         self.graph = None
         # Note: Using in-memory checkpointing for now - will implement persistent storage later
+        
         self._build_workflow()
         
         logger.info(f"GCPLogInvestigationAgent initialized with config: {self.config}")
@@ -47,14 +60,19 @@ class GCPLogInvestigationAgent:
         This method constructs the complete workflow graph with all nodes
         and conditional edges according to the investigation flow.
         """
+        
         # Create the StateGraph
         workflow = StateGraph(AgentState)
         
         # Initialize node instances
         user_query_node = UserQueryInputNode(self.config)
         
+        architecture_loader_node = ArchitectureLoaderNode(self.config)
+        
         # Add nodes to the workflow
         workflow.add_node("user_query_input", user_query_node.execute)
+        
+        workflow.add_node("architecture_loader", architecture_loader_node.execute)
         
         # TODO: Add more nodes as we implement them
         # workflow.add_node("intent_classification", intent_classification_node.execute)
@@ -69,24 +87,36 @@ class GCPLogInvestigationAgent:
         # Set entry point
         workflow.set_entry_point("user_query_input")
         
-        # Add conditional edges for routing decisions
-        # TODO: Implement routing logic as we add more nodes
+        # Add edges for Phase 1 flow: A -> A1 -> END
+        workflow.add_edge("user_query_input", "architecture_loader")
+        
+        workflow.add_edge("architecture_loader", END)
+        
+        # TODO: Add conditional edges for routing decisions as we add more nodes
         # workflow.add_conditional_edges(
         #     "user_query_input",
         #     self._route_after_input_analysis,
         #     {
         #         "needs_clarification": "clarification",
-        #         "proceed": "intent_classification"
+        #         "proceed": "architecture_loader"
         #     }
         # )
-        
-        # For now, just end after user query input
-        workflow.add_edge("user_query_input", END)
         
         # Compile the workflow
         self.graph = workflow.compile()
         
         logger.info("LangGraph workflow built successfully")
+    
+    def get_graph(self):
+        """
+        Get the compiled LangGraph for LangGraph Studio.
+        
+        Returns:
+            Compiled LangGraph workflow
+        """
+        if not self.graph:
+            self._build_workflow()
+        return self.graph
     
     def _route_after_input_analysis(self, state: AgentState) -> str:
         """
@@ -98,8 +128,10 @@ class GCPLogInvestigationAgent:
         Returns:
             Next node to execute
         """
+        
         if state.get("needs_clarification", False):
             return "clarification"
+        
         return "intent_classification"
     
     async def process_query(
@@ -118,6 +150,7 @@ class GCPLogInvestigationAgent:
             Complete analysis results
         """
         try:
+            
             logger.info(f"Processing query: {query_input.get('question', 'Unknown')}")
             
             # Initialize state from input
@@ -125,12 +158,13 @@ class GCPLogInvestigationAgent:
             
             # Execute the workflow
             config = {"configurable": {"thread_id": session_id or "default"}}
+            
             final_state = await self.graph.ainvoke(initial_state, config=config)
+            
             
             # Format response
             response = self._format_response(final_state)
             
-            logger.info(f"Query processing completed successfully")
             return response
             
         except Exception as e:
@@ -153,6 +187,7 @@ class GCPLogInvestigationAgent:
             Streaming chunks of analysis results
         """
         try:
+            
             logger.info(f"Processing streaming query: {query_input.get('question', 'Unknown')}")
             
             # Initialize state from input
@@ -211,6 +246,9 @@ class GCPLogInvestigationAgent:
         Returns:
             Initialized AgentState
         """
+        
+        investigation_id = f"inv_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        
         return AgentState(
             # User inputs
             question=query_input.get("question", ""),
@@ -262,7 +300,11 @@ class GCPLogInvestigationAgent:
             # Learning and memory
             discovered_patterns=[],
             user_preferences={},
-            architecture_insights={}
+            architecture_insights={},
+            
+            # Architecture context (for A1 node)
+            architecture_context=None,
+            relevant_services=None
         )
     
     def _format_response(self, final_state: AgentState) -> Dict[str, Any]:
@@ -275,9 +317,11 @@ class GCPLogInvestigationAgent:
         Returns:
             Formatted response dictionary
         """
+        
         # Check if there was an error during processing
         has_error = final_state.get("error") is not None
         is_error_step = final_state.get("current_step", "").endswith("_error")
+        
         
         return {
             "success": not (has_error or is_error_step),
@@ -310,6 +354,7 @@ class GCPLogInvestigationAgent:
         Returns:
             Formatted error response
         """
+        
         return {
             "success": False,
             "analysis": "",
@@ -327,3 +372,21 @@ class GCPLogInvestigationAgent:
                 "execution_time": datetime.utcnow().isoformat()
             }
         }
+
+
+# Global agent instance for LangGraph Studio
+_agent_instance = None
+
+def get_agent_graph():
+    """
+    Get the compiled LangGraph for LangGraph Studio.
+    
+    This function is called by LangGraph Studio to get the workflow graph.
+    
+    Returns:
+        Compiled LangGraph workflow
+    """
+    global _agent_instance
+    if _agent_instance is None:
+        _agent_instance = GCPLogInvestigationAgent()
+    return _agent_instance.get_graph()

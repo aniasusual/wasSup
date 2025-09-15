@@ -120,6 +120,10 @@ class AgentState(TypedDict):
     discovered_patterns: List[Dict[str, Any]]
     user_preferences: Dict[str, Any]
     architecture_insights: Dict[str, Any]
+    
+    # Architecture context (added for A1 node)
+    architecture_context: Optional[Dict[str, Any]]
+    relevant_services: Optional[List[str]]
 
 
 class NodeResult(BaseModel):

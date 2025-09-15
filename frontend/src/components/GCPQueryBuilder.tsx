@@ -164,17 +164,8 @@ const parseGCPQuery = (query: string): ParsedQuery | null => {
       }
     }
 
-    console.log("Parsed query result:", {
-      originalQuery: query,
-      parsedResourceType: result.resourceType,
-      parsedResourceLabels: result.resourceLabels,
-      parsedAdditionalQueries: result.additionalQueries,
-      lines: lines,
-    });
-
     return result.resourceType ? result : null;
   } catch (error) {
-    console.error("Error parsing query:", error);
     return null;
   }
 };
@@ -413,7 +404,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
   // Add debug message with useCallback to prevent recreation
   const addDebugMessage = useCallback((message: string) => {
-    console.log(`[QueryBuilder] ${message}`);
     setDebugInfo((prev) => [
       ...prev.slice(-20),
       `${new Date().toLocaleTimeString()}: ${message}`,
@@ -461,7 +451,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
       token: string
     ) => {
       try {
-        console.log(`Fetching options for ${resourceType}.${label}`, {
+        console.log("Fetching options from backend:", {
           resourceType,
           label,
           projectId,
@@ -502,7 +492,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           options = response.data.options;
         } else if (response.data.options) {
           // If options is not an array, try to convert it
-          console.warn(
+          console.log(
             `Options not an array for ${resourceType}.${label}:`,
             response.data.options
           );
@@ -512,7 +502,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           if (Array.isArray(response.data)) {
             options = response.data;
           } else {
-            console.error(
+            console.log(
               `Unexpected response format for ${resourceType}.${label}:`,
               response.data
             );
@@ -534,7 +524,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         );
 
         if (validOptions.length === 0 && response.data.message) {
-          console.warn(
+          console.log(
             `No options returned for ${resourceType}.${label}: ${response.data.message}`
           );
         }
@@ -643,7 +633,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         const errorMessage = err.message || "Unknown error occurred";
 
         addDebugMessage(`Error fetching options for ${label}: ${errorMessage}`);
-        console.error(`fetchDropdownOptions error for ${label}:`, err);
 
         setLabelOptions((prev) => ({ ...prev, [label]: [] }));
         setLabelLoading((prev) => ({ ...prev, [label]: false }));
@@ -875,13 +864,13 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     onQuerySubmit(queryPreview);
   }, [resourceType, queryPreview, onQuerySubmit]);
 
-  // Clear all selections
-  const handleClearAll = useCallback(() => {
-    setResourceLabels({});
-    setAdditionalQueries([]);
-    setError("");
-    setDependencyValues({});
-  }, []);
+  // Clear all selections (currently unused)
+  // const handleClearAll = useCallback(() => {
+  //   setResourceLabels({});
+  //   setAdditionalQueries([]);
+  //   setError("");
+  //   setDependencyValues({});
+  // }, []);
 
   // Handle manual query parsing
   const handleParseManualQuery = useCallback(() => {
@@ -938,18 +927,17 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     toast.success(`Successfully parsed query for ${parsed.resourceType}`);
   }, [manualQuery, tab, onUpdateTab, addDebugMessage]);
 
-  // Copy query to clipboard
-  const handleCopyQuery = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(queryPreview);
-      addDebugMessage("Query copied to clipboard");
-      toast.success("Query copied to clipboard");
-    } catch (error) {
-      console.error("Failed to copy query:", error);
-      addDebugMessage("Failed to copy query to clipboard");
-      toast.error("Failed to copy query to clipboard");
-    }
-  }, [queryPreview, addDebugMessage]);
+  // Copy query to clipboard (currently unused)
+  // const handleCopyQuery = useCallback(async () => {
+  //   try {
+  //     await navigator.clipboard.writeText(queryPreview);
+  //     addDebugMessage("Query copied to clipboard");
+  //     toast.success("Query copied to clipboard");
+  //   } catch (error) {
+  //     addDebugMessage("Failed to copy query to clipboard");
+  //     toast.error("Failed to copy query to clipboard");
+  //   }
+  // }, [queryPreview, addDebugMessage]);
 
   // Get status icon for API calls
   const getStatusIcon = (status: string) => {
@@ -970,7 +958,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   // Debug functions
   const testApiConnectivity = async () => {
     if (!token || !projectId) {
-      console.error("Missing token or projectId for testing");
       return;
     }
 
@@ -994,7 +981,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
     for (const testCase of testCases) {
       try {
-        console.log(`Testing ${testCase.name}...`);
         const options = await fetchOptionsFromBackend(
           testCase.resourceType,
           testCase.label,
@@ -1007,7 +993,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           options.slice(0, 3)
         );
       } catch (error: any) {
-        console.error(`❌ ${testCase.name} failed:`, error.message);
       }
     }
   };

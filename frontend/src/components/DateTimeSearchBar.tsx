@@ -52,7 +52,7 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
 
   // Format time for display
   const formatTime = useCallback((timestamp: number) => {
-    const date = new Date(timestamp);
+    // const date = new Date(timestamp);
     const now = new Date();
     const diffMs = now.getTime() - timestamp;
     const diffMins = Math.floor(diffMs / MS_PER_MIN);

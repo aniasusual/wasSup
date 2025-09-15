@@ -50,7 +50,6 @@ export const useLogService = () => {
 
         // Handle project_logs service type
         if (params.serviceId === "project_logs") {
-            console.log("Building filter for project_logs - no resource type filter will be applied");
             // For project logs, we don't add any resource type filters, allowing all logs
         }
 
@@ -150,7 +149,7 @@ export const useLogService = () => {
         const finalFilter = filters.length > 0 ? filters.join(' AND ') : "";
 
         // Debug logging for filter building
-        console.log("Filter building debug:", {
+        console.log("Filter building:", {
             baseFilter: baseFilter,
             hasBaseFilter: !!baseFilter,
             serviceId: params.serviceId,
@@ -163,7 +162,7 @@ export const useLogService = () => {
 
         // Debug logging for time filters
         if (params.filters?.customStartTime && params.filters?.customEndTime) {
-            console.log("Time filter debug:", {
+            console.log("Time filters:", {
                 customStartTime: params.filters.customStartTime,
                 customEndTime: params.filters.customEndTime,
                 startTime: new Date(params.filters.customStartTime).toISOString(),
@@ -173,7 +172,6 @@ export const useLogService = () => {
         }
 
         if (params.serviceId === "project_logs") {
-            console.log("Final filter for project_logs:", finalFilter || "No filters applied (all logs)");
         }
 
         return finalFilter;
@@ -226,7 +224,6 @@ export const useLogService = () => {
             }
 
             // Fallback to direct Google API if backend fails
-            console.warn("Backend log fetch failed, falling back to direct GCP API", error);
 
             // Show error toast for backend failure
             let errorMessage = "Failed to fetch logs from backend";
@@ -289,7 +286,6 @@ export const useLogService = () => {
         //         totalEntries: response.data.entries?.length || 0
         //     };
         // } catch (error: any) {
-        //     console.error("Error fetching logs (fallback):", error);
         //     if (error.response?.data?.error?.message) {
         //         throw new Error(error.response.data.error.message);
         //     }
