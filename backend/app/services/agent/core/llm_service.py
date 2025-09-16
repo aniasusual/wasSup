@@ -171,23 +171,29 @@ class LLMService:
             logger.warning("GEMINI_API_KEY not found. LLM features will be disabled.")
             self.llm = None
         else:
-            logger.info("Initializing Gemini 1.5 Flash model...")
-            # Initialize Gemini model
-            self.llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash",
-                google_api_key=self.api_key,
-                temperature=0.1,  # Low temperature for consistent extraction
-                max_output_tokens=2048,
-                convert_system_message_to_human=True
-            )
-            logger.info("Gemini model initialized")
-            
-            # Initialize output parsers
-            self.entity_parser = JsonOutputParser(pydantic_object=ExtractedEntities)
-            self.classification_parser = JsonOutputParser(pydantic_object=QueryClassification)
-            self.architecture_parser = JsonOutputParser(pydantic_object=ParsedArchitecture)
-            
-            logger.info("LLM service fully initialized")
+            try:
+                logger.info("Initializing Gemini 1.5 Flash model...")
+                # Initialize Gemini model
+                self.llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.0-flash",
+                    google_api_key=self.api_key,
+                    temperature=0.1,  # Low temperature for consistent extraction
+                    max_output_tokens=2048,
+                    convert_system_message_to_human=True
+                )
+                logger.info("Gemini model initialized")
+                
+                # Initialize output parsers
+                self.entity_parser = JsonOutputParser(pydantic_object=ExtractedEntities)
+                self.classification_parser = JsonOutputParser(pydantic_object=QueryClassification)
+                self.architecture_parser = JsonOutputParser(pydantic_object=ParsedArchitecture)
+                
+                logger.info("LLM service fully initialized")
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize LLM service: {str(e)}")
+                self.llm = None
+                raise RuntimeError(f"LLM service initialization failed: {str(e)}")
     
     def _create_entity_extraction_prompt(self) -> ChatPromptTemplate:
         """Create the prompt template for entity extraction."""
@@ -277,14 +283,24 @@ Provide your analysis in the specified JSON format.""")
 Your task is to extract structured information from architecture descriptions to understand the system's components, relationships, and patterns.
 
 Focus on identifying:
-1. Services: GCP services like cloud_run, cloud_sql, gce_instance, gke_cluster, app_engine, cloud_functions, load_balancer, cloud_storage, pubsub, bigquery, firestore, etc.
+1. Services: GCP services including but not limited to:
+   - Compute: cloud_run, gce_instance, gke_cluster, app_engine, cloud_functions
+   - Storage: cloud_storage, firestore, cloud_sql, spanner, bigtable
+   - Networking: load_balancer, cloud_nat, vpc, cloud_dns
+   - Data & Analytics: bigquery, dataflow, dataproc, pubsub, cloud_scheduler
+   - Security: cloud_iam, secret_manager, cloud_kms
+   - Monitoring: cloud_logging, cloud_monitoring, cloud_trace, cloud_debugger
+   - AI/ML: vertex_ai, automl, cloud_vision, cloud_speech
+   - And any other GCP services mentioned
+
 2. Dependencies: Service-to-service relationships, data dependencies, and communication patterns
 3. Data Flows: How data moves between services, APIs, and external systems
 4. Infrastructure: Network configuration, security settings, scaling policies, etc.
 5. Technologies: Frameworks, languages, databases, messaging systems, etc.
 6. Patterns: Architectural patterns like microservices, event-driven, serverless, etc.
 
-Be thorough and extract all relevant architectural information that would be useful for log analysis and troubleshooting."""),
+Be thorough and extract all relevant architectural information that would be useful for log analysis and troubleshooting.
+Use your knowledge of GCP services to identify services even if they're mentioned with different names or abbreviations."""),
             
             ("human", """Parse this GCP project architecture description:
 
@@ -334,8 +350,7 @@ Provide your analysis in the specified JSON format.""")
             
         except Exception as e:
             logger.error(f"Error in LLM architecture parsing: {str(e)}")
-            logger.info("Falling back to basic parsing")
-            return self._fallback_architecture_parsing(architecture_prompt)
+            raise e
     
     async def extract_entities(self, question: str) -> Dict[str, Any]:
         """
@@ -350,9 +365,7 @@ Provide your analysis in the specified JSON format.""")
         logger.info("Starting entity extraction")
         
         if not self.llm:
-            logger.warning("LLM not available, falling back to basic extraction")
-            logger.warning("LLM not available, falling back to basic extraction")
-            return self._fallback_entity_extraction(question)
+            raise RuntimeError("LLM service is not available")
         
         try:
             logger.debug("Creating entity extraction prompt...")
@@ -374,8 +387,7 @@ Provide your analysis in the specified JSON format.""")
             
         except Exception as e:
             logger.error(f"Error in LLM entity extraction: {str(e)}")
-            logger.info("Falling back to basic extraction...")
-            return self._fallback_entity_extraction(question)
+            raise e
     
     async def classify_query(self, question: str, entities: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -391,9 +403,7 @@ Provide your analysis in the specified JSON format.""")
         logger.info("Starting query classification")
         
         if not self.llm:
-            logger.warning("LLM not available, falling back to basic classification")
-            logger.warning("LLM not available, falling back to basic classification")
-            return self._fallback_query_classification(question, entities)
+            raise RuntimeError("LLM service is not available")
         
         try:
             logger.debug("Creating classification prompt...")
@@ -416,8 +426,7 @@ Provide your analysis in the specified JSON format.""")
             
         except Exception as e:
             logger.error(f"Error in LLM query classification: {str(e)}")
-            logger.info("Falling back to basic classification...")
-            return self._fallback_query_classification(question, entities)
+            raise e
     
     async def detect_missing_information(self, question: str, entities: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -432,8 +441,7 @@ Provide your analysis in the specified JSON format.""")
             Dictionary containing missing information analysis
         """
         if not self.llm:
-            logger.warning("LLM not available, falling back to basic missing info detection")
-            return self._fallback_missing_info_detection(question, entities, state)
+            raise RuntimeError("LLM service is not available")
         
         try:
             # Create a specialized prompt for missing information detection
@@ -499,8 +507,7 @@ Provide your analysis focusing on practical investigation needs.""")
             
         except Exception as e:
             logger.error(f"Error in LLM missing info detection: {str(e)}")
-            logger.info("Falling back to basic detection")
-            return self._fallback_missing_info_detection(question, entities, state)
+            raise e
     
     def _parse_missing_info_result(self, result: str) -> Dict[str, Any]:
         """Parse the LLM result for missing information detection."""
@@ -528,280 +535,3 @@ Provide your analysis focusing on practical investigation needs.""")
             "analysis": result,
             "needs_clarification": len(missing_info) > 0
         }
-    
-    def _fallback_entity_extraction(self, question: str) -> Dict[str, Any]:
-        """
-        Fallback entity extraction using regex patterns.
-        
-        Args:
-            question: User's question
-            
-        Returns:
-            Dictionary containing extracted entities
-        """
-        import re
-        
-        question_lower = question.lower()
-        
-        # Service patterns
-        service_patterns = {
-            'cloud_run': r'\b(?:cloud.?run|cloudrun|run)\b',
-            'cloud_sql': r'\b(?:cloud.?sql|cloudsql|sql)\b',
-            'gce_instance': r'\b(?:gce|compute.?engine|compute.?instance|vm|instance)\b',
-            'gke_cluster': r'\b(?:gke|kubernetes|k8s|cluster)\b',
-            'app_engine': r'\b(?:app.?engine|gae)\b',
-            'cloud_functions': r'\b(?:cloud.?functions|functions|gcf)\b',
-            'load_balancer': r'\b(?:load.?balancer|lb|ingress)\b',
-            'cloud_storage': r'\b(?:cloud.?storage|storage|gcs|bucket)\b'
-        }
-        
-        # Extract services
-        services = []
-        for service_name, pattern in service_patterns.items():
-            if re.search(pattern, question_lower):
-                services.append(service_name)
-        
-        # Extract severities
-        severity_patterns = {
-            'ERROR': r'\b(?:error|err|failed|failure|exception|critical|fatal)\b',
-            'WARNING': r'\b(?:warning|warn|caution|alert)\b',
-            'INFO': r'\b(?:info|information|debug|trace)\b'
-        }
-        
-        severities = []
-        for severity, pattern in severity_patterns.items():
-            if re.search(pattern, question_lower):
-                severities.append(severity)
-        
-        # Extract time indicators
-        time_patterns = {
-            'last_hour': r'\b(?:last.?hour|past.?hour|hour)\b',
-            'last_day': r'\b(?:last.?day|past.?day|day|yesterday)\b',
-            'last_week': r'\b(?:last.?week|past.?week|week)\b',
-            'recent': r'\b(?:recent|recently|lately)\b'
-        }
-        
-        time_indicators = []
-        for time_type, pattern in time_patterns.items():
-            if re.search(pattern, question_lower):
-                time_indicators.append(time_type)
-        
-        # Extract keywords
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must', 'shall'}
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', question_lower)
-        keywords = list(set([word for word in words if word not in stop_words]))[:10]
-        
-        return {
-            "services": services,
-            "severities": severities,
-            "time_indicators": time_indicators,
-            "error_patterns": [],
-            "http_status_codes": re.findall(r'\b(?:5\d{2}|4\d{2})\b', question),
-            "resource_identifiers": [],
-            "keywords": keywords,
-            "intent_indicators": []
-        }
-    
-    def _fallback_query_classification(self, question: str, entities: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Fallback query classification using rule-based approach.
-        
-        Args:
-            question: User's question
-            entities: Extracted entities
-            
-        Returns:
-            Dictionary containing classification results
-        """
-        question_lower = question.lower()
-        
-        # Complex query indicators
-        has_multiple_services = len(entities.get("services", [])) > 1
-        has_analysis_keywords = any(keyword in question_lower for keyword in [
-            'analyze', 'compare', 'correlate', 'relationship', 'dependency', 'impact', 'root cause'
-        ])
-        
-        # Ambiguous query indicators
-        has_ambiguous_words = any(word in question_lower for word in [
-            'something', 'anything', 'everything', 'all', 'some', 'maybe', 'possibly'
-        ])
-        
-        is_vague = len(entities.get("keywords", [])) < 3 and not any([
-            len(entities.get("services", [])) == 1,
-            len(entities.get("time_indicators", [])) == 1,
-            len(entities.get("severities", [])) == 1
-        ])
-        
-        if has_analysis_keywords or has_multiple_services:
-            return {
-                "query_type": "complex",
-                "confidence": 0.8,
-                "reasoning": "Multiple services or analysis keywords detected",
-                "complexity_factors": ["multiple_services", "analysis_intent"],
-                "missing_information": []
-            }
-        elif is_vague or has_ambiguous_words:
-            return {
-                "query_type": "ambiguous",
-                "confidence": 0.9,
-                "reasoning": "Vague or ambiguous language detected",
-                "complexity_factors": ["vague_intent"],
-                "missing_information": ["service_specification", "time_range"]
-            }
-        else:
-            return {
-                "query_type": "simple",
-                "confidence": 0.7,
-                "reasoning": "Clear, specific query with focused intent",
-                "complexity_factors": [],
-                "missing_information": []
-            }
-    
-    def _fallback_missing_info_detection(self, question: str, entities: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Fallback missing information detection using rule-based approach.
-        
-        Args:
-            question: User's question
-            entities: Extracted entities
-            state: Current agent state
-            
-        Returns:
-            Dictionary containing missing information analysis
-        """
-        missing_info = []
-        
-        # Check for missing services
-        if not entities.get("services") and not state.get("services"):
-            missing_info.append("service_specification")
-        
-        # Check for missing time range
-        if not entities.get("time_indicators") and not state.get("time_range"):
-            missing_info.append("time_range")
-        
-        # Check for missing severity focus
-        if not entities.get("severities"):
-            question_lower = question.lower()
-            if not any(word in question_lower for word in ["error", "warning", "info", "debug", "fail", "issue"]):
-                missing_info.append("severity_focus")
-        
-        # Check for project context
-        if not state.get("project_id"):
-            missing_info.append("project_id")
-        
-        return {
-            "missing_information": missing_info,
-            "analysis": f"Rule-based analysis detected {len(missing_info)} missing information categories",
-            "needs_clarification": len(missing_info) > 0
-        }
-    
-    def _fallback_architecture_parsing(self, architecture_prompt: str) -> Dict[str, Any]:
-        """
-        Fallback architecture parsing using regex patterns.
-        
-        Args:
-            architecture_prompt: Raw architecture description
-            
-        Returns:
-            Dictionary containing parsed architecture information
-        """
-        import re
-        
-        prompt_lower = architecture_prompt.lower()
-        
-        parsed = {
-            "services": [],
-            "dependencies": [],
-            "data_flows": [],
-            "infrastructure": {},
-            "technologies": [],
-            "patterns": []
-        }
-        
-        # GCP service patterns
-        gcp_service_patterns = {
-            'cloud_run': r'\b(?:cloud.?run|cloudrun|run|serverless|container)\b',
-            'cloud_sql': r'\b(?:cloud.?sql|cloudsql|sql|database|db|mysql|postgres)\b',
-            'gce_instance': r'\b(?:gce|compute.?engine|compute.?instance|vm|instance|virtual.?machine)\b',
-            'gke_cluster': r'\b(?:gke|kubernetes|k8s|cluster|pod|container.?orchestration)\b',
-            'app_engine': r'\b(?:app.?engine|gae|appengine)\b',
-            'cloud_functions': r'\b(?:cloud.?functions|functions|gcf|serverless.?function)\b',
-            'load_balancer': r'\b(?:load.?balancer|lb|ingress|traffic.?manager)\b',
-            'cloud_storage': r'\b(?:cloud.?storage|storage|gcs|bucket|object.?storage)\b',
-            'pubsub': r'\b(?:pub.?sub|pubsub|message.?queue|event.?stream)\b',
-            'bigquery': r'\b(?:bigquery|big.?query|data.?warehouse|analytics)\b',
-            'firestore': r'\b(?:firestore|firebase|document.?database|nosql)\b',
-            'cloud_logging': r'\b(?:cloud.?logging|logging|logs|monitoring)\b',
-            'cloud_monitoring': r'\b(?:cloud.?monitoring|monitoring|metrics|observability)\b'
-        }
-        
-        # Extract GCP services
-        for service_type, pattern in gcp_service_patterns.items():
-            if re.search(pattern, prompt_lower):
-                parsed["services"].append({
-                    "type": service_type,
-                    "name": service_type.replace("_", " ").title(),
-                    "detected_by": "regex_pattern"
-                })
-        
-        # Technology patterns
-        tech_patterns = {
-            'docker': r'\b(?:docker|container)\b',
-            'kubernetes': r'\b(?:kubernetes|k8s|kube)\b',
-            'microservices': r'\b(?:microservice|micro.?service)\b',
-            'api_gateway': r'\b(?:api.?gateway|gateway)\b',
-            'message_queue': r'\b(?:message.?queue|queue|messaging)\b',
-            'cache': r'\b(?:cache|caching|redis|memcached)\b',
-            'cdn': r'\b(?:cdn|content.?delivery)\b',
-            'react': r'\b(?:react|reactjs)\b',
-            'nodejs': r'\b(?:nodejs|node\.?js)\b',
-            'python': r'\b(?:python|django|flask)\b',
-            'java': r'\b(?:java|spring|springboot)\b'
-        }
-        
-        for tech, pattern in tech_patterns.items():
-            if re.search(pattern, prompt_lower):
-                parsed["technologies"].append(tech)
-        
-        # Dependency patterns
-        dependency_patterns = [
-            r'(?:depends on|depends upon|uses|connects to|communicates with)\s+([a-zA-Z0-9\s\-_]+)',
-            r'(?:calls|invokes|triggers)\s+([a-zA-Z0-9\s\-_]+)',
-            r'(?:sends data to|receives data from)\s+([a-zA-Z0-9\s\-_]+)'
-        ]
-        
-        for pattern in dependency_patterns:
-            matches = re.findall(pattern, prompt_lower)
-            parsed["dependencies"].extend([match.strip() for match in matches])
-        
-        # Data flow patterns
-        flow_patterns = [
-            r'(?:data flows? from|traffic flows? from)\s+([a-zA-Z0-9\s\-_]+)\s+(?:to|into)\s+([a-zA-Z0-9\s\-_]+)',
-            r'([a-zA-Z0-9\s\-_]+)\s+(?:sends|transmits|forwards)\s+(?:to|data to)\s+([a-zA-Z0-9\s\-_]+)'
-        ]
-        
-        for pattern in flow_patterns:
-            matches = re.findall(pattern, prompt_lower)
-            for match in matches:
-                if len(match) == 2:
-                    parsed["data_flows"].append({
-                        "source": match[0].strip(),
-                        "target": match[1].strip()
-                    })
-        
-        # Architectural patterns
-        pattern_keywords = {
-            'microservices': r'\b(?:microservice|micro.?service)\b',
-            'serverless': r'\b(?:serverless|function.?as.?a.?service|faas)\b',
-            'event_driven': r'\b(?:event.?driven|event.?driven.?architecture)\b',
-            'api_first': r'\b(?:api.?first|api.?driven)\b',
-            'caching': r'\b(?:caching|cache.?first)\b',
-            'load_balancing': r'\b(?:load.?balancing|load.?balancer)\b'
-        }
-        
-        for pattern_name, pattern in pattern_keywords.items():
-            if re.search(pattern, prompt_lower):
-                parsed["patterns"].append(pattern_name)
-        
-        logger.debug(f"Fallback architecture parsing result: {parsed}")
-        return parsed

@@ -54,24 +54,7 @@ class ArchitectureLoaderNode:
         # Initialize LLM service for architecture parsing
         self.llm_service = LLMService()
         
-        # Service type patterns for GCP services
-        self.gcp_service_patterns = {
-            'cloud_run': r'\b(?:cloud.?run|cloudrun|run|serverless|container)\b',
-            'cloud_sql': r'\b(?:cloud.?sql|cloudsql|sql|database|db|mysql|postgres)\b',
-            'gce_instance': r'\b(?:gce|compute.?engine|compute.?instance|vm|instance|virtual.?machine)\b',
-            'gke_cluster': r'\b(?:gke|kubernetes|k8s|cluster|pod|container.?orchestration)\b',
-            'app_engine': r'\b(?:app.?engine|gae|appengine)\b',
-            'cloud_functions': r'\b(?:cloud.?functions|functions|gcf|serverless.?function)\b',
-            'load_balancer': r'\b(?:load.?balancer|lb|ingress|traffic.?manager)\b',
-            'cloud_storage': r'\b(?:cloud.?storage|storage|gcs|bucket|object.?storage)\b',
-            'pubsub': r'\b(?:pub.?sub|pubsub|message.?queue|event.?stream)\b',
-            'bigquery': r'\b(?:bigquery|big.?query|data.?warehouse|analytics)\b',
-            'firestore': r'\b(?:firestore|firebase|document.?database|nosql)\b',
-            'cloud_logging': r'\b(?:cloud.?logging|logging|logs|monitoring)\b',
-            'cloud_monitoring': r'\b(?:cloud.?monitoring|monitoring|metrics|observability)\b'
-        }
-        
-        self.logger.info("ArchitectureLoaderNode initialized with LLM service")
+        self.logger.info("ArchitectureLoaderNode initialized")
     
     async def execute(self, state: AgentState) -> AgentState:
         """
@@ -96,7 +79,7 @@ class ArchitectureLoaderNode:
                 return self._handle_no_architecture(state)
             
             
-            # Parse architecture using LLM (with regex fallback)
+            # Parse architecture using LLM
             parsed_architecture = await self._parse_architecture_nlp(architecture.architecture_prompt)
             
             # Extract relevant services for the current query
@@ -134,7 +117,7 @@ class ArchitectureLoaderNode:
                         "loaded_architecture": True,
                         "parsed_services": parsed_architecture.get("services", []),
                         "relevant_services": relevant_services,
-                        "parsing_method": "llm_with_regex_fallback"
+                        "parsing_method": "llm"
                     }
                 }
             })
@@ -161,6 +144,7 @@ class ArchitectureLoaderNode:
         """
         try:
             architecture = await project_architecture_service.get_architecture_by_project(project_id)
+            # print(f"Architecture: {architecture}")
             if architecture:
                 self.logger.info(f"Loaded architecture for project {project_id}")
             else:
@@ -172,7 +156,7 @@ class ArchitectureLoaderNode:
     
     async def _parse_architecture_nlp(self, architecture_prompt: str) -> Dict[str, Any]:
         """
-        Parse architecture description using NLP (LLM) with regex fallback.
+        Parse architecture description using LLM.
         
         Args:
             architecture_prompt: Raw architecture description
@@ -180,87 +164,11 @@ class ArchitectureLoaderNode:
         Returns:
             Parsed architecture information
         """
-        try:
-            # Use LLM service for intelligent architecture parsing
-            parsed = await self.llm_service.parse_architecture(architecture_prompt)
-            return parsed
-        except Exception as e:
-            self.logger.error(f"Error in NLP architecture parsing: {str(e)}")
-            raise RuntimeError(f"Failed to parse architecture: {str(e)}")
-    
-    def _parse_architecture_regex(self, architecture_prompt: str) -> Dict[str, Any]:
-        """
-        Parse architecture description using regex patterns.
-        
-        Args:
-            architecture_prompt: Raw architecture description
-            
-        Returns:
-            Parsed architecture information
-        """
-        prompt_lower = architecture_prompt.lower()
-        
-        parsed = {
-            "services": [],
-            "dependencies": [],
-            "data_flows": [],
-            "infrastructure": {},
-            "technologies": [],
-            "patterns": []
-        }
-        
-        # Extract GCP services
-        for service_type, pattern in self.gcp_service_patterns.items():
-            if re.search(pattern, prompt_lower):
-                parsed["services"].append({
-                    "type": service_type,
-                    "name": service_type.replace("_", " ").title(),
-                    "detected_by": "regex_pattern"
-                })
-        
-        # Extract common technology patterns
-        tech_patterns = {
-            'docker': r'\b(?:docker|container)\b',
-            'kubernetes': r'\b(?:kubernetes|k8s|kube)\b',
-            'microservices': r'\b(?:microservice|micro.?service)\b',
-            'api_gateway': r'\b(?:api.?gateway|gateway)\b',
-            'message_queue': r'\b(?:message.?queue|queue|messaging)\b',
-            'cache': r'\b(?:cache|caching|redis|memcached)\b',
-            'cdn': r'\b(?:cdn|content.?delivery)\b'
-        }
-        
-        for tech, pattern in tech_patterns.items():
-            if re.search(pattern, prompt_lower):
-                parsed["technologies"].append(tech)
-        
-        # Extract dependency patterns
-        dependency_patterns = [
-            r'(?:depends on|depends upon|uses|connects to|communicates with)\s+([a-zA-Z0-9\s\-_]+)',
-            r'(?:calls|invokes|triggers)\s+([a-zA-Z0-9\s\-_]+)',
-            r'(?:sends data to|receives data from)\s+([a-zA-Z0-9\s\-_]+)'
-        ]
-        
-        for pattern in dependency_patterns:
-            matches = re.findall(pattern, prompt_lower)
-            parsed["dependencies"].extend([match.strip() for match in matches])
-        
-        # Extract data flow patterns
-        flow_patterns = [
-            r'(?:data flows? from|traffic flows? from)\s+([a-zA-Z0-9\s\-_]+)\s+(?:to|into)\s+([a-zA-Z0-9\s\-_]+)',
-            r'([a-zA-Z0-9\s\-_]+)\s+(?:sends|transmits|forwards)\s+(?:to|data to)\s+([a-zA-Z0-9\s\-_]+)'
-        ]
-        
-        for pattern in flow_patterns:
-            matches = re.findall(pattern, prompt_lower)
-            for match in matches:
-                if len(match) == 2:
-                    parsed["data_flows"].append({
-                        "source": match[0].strip(),
-                        "target": match[1].strip()
-                    })
-        
-        self.logger.debug(f"Regex-parsed architecture: {parsed}")
+        # Use LLM service for intelligent architecture parsing
+        parsed = await self.llm_service.parse_architecture(architecture_prompt)
+        self.logger.info("Successfully parsed architecture using LLM")
         return parsed
+    
     
     def _extract_relevant_services(
         self, 
@@ -296,7 +204,7 @@ class ArchitectureLoaderNode:
         # Add services from architecture that match query intent
         architecture_services = []
         for s in parsed_architecture.get("services", []):
-            # Handle both LLM and fallback parsing formats
+            # Handle LLM parsing format
             if isinstance(s, dict):
                 service_type = s.get("type") or s.get("name", "")
                 if service_type:
@@ -320,13 +228,16 @@ class ArchitectureLoaderNode:
                     elif isinstance(arch_service, str):
                         service_type = arch_service
                     
-                    if service in service_type:
+                    if service in service_type.lower():
+                        relevant_services.add(service_type)
+                        
                         # Add dependencies
                         for dep in parsed_architecture.get("dependencies", []):
                             if service in dep.lower():
-                                # Extract service type from dependency
-                                for dep_service_type in self.gcp_service_patterns.keys():
-                                    if dep_service_type in dep.lower():
+                                # Try to match dependency to known service types
+                                for service_info in parsed_architecture.get("services", []):
+                                    dep_service_type = service_info.get("type", "")
+                                    if dep_service_type and dep_service_type in dep.lower():
                                         relevant_services.add(dep_service_type)
         
         return list(relevant_services)

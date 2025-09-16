@@ -37,7 +37,7 @@ interface GCPQueryBuilderProps {
 
 interface ApiStatus {
   [key: string]: {
-    status: "loading" | "success" | "error" | "fallback";
+    status: "loading" | "success" | "error";
     message?: string;
     endpoint?: string;
   };
@@ -498,7 +498,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           );
           options = [];
         } else {
-          // Fallback: check if the response data itself is an array
+          // Check if the response data itself is an array
           if (Array.isArray(response.data)) {
             options = response.data;
           } else {
@@ -948,8 +948,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         return <CheckCircle className="w-3 h-3 text-emerald-400" />;
       case "error":
         return <XCircle className="w-3 h-3 text-red-400" />;
-      case "fallback":
-        return <AlertCircle className="w-3 h-3 text-amber-400" />;
       default:
         return null;
     }
