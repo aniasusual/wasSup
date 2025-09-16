@@ -215,15 +215,13 @@ export const useLogService = () => {
                     totalEntries: response.data.totalEntries,
                 };
             }
-            // If backend response is malformed, fall through to fallback
+            // If backend response is malformed, throw error
         } catch (error: any) {
             // Check for authentication/authorization errors
             if (error.response?.status === 401 || error.response?.status === 403) {
                 forceLogout("Authentication token expired or invalid");
                 throw new Error("Authentication failed");
             }
-
-            // Fallback to direct Google API if backend fails
 
             // Show error toast for backend failure
             let errorMessage = "Failed to fetch logs from backend";
@@ -242,61 +240,8 @@ export const useLogService = () => {
             throw new Error(errorMessage);
         }
 
-        // Fallback: direct Google API call
-        // try {
-        //     const requestBody: any = {
-        //         resourceNames: [`projects/${params.projectId}`],
-        //         filter: filterString,
-        //         orderBy: "timestamp desc",
-        //         pageSize: params.pageSize || 100
-        //     };
-        //     if (params.pageToken) {
-        //         requestBody.pageToken = params.pageToken;
-        //     }
-        //     const response = await axios.post(
-        //         'https://logging.googleapis.com/v2/entries:list',
-        //         requestBody,
-        //         {
-        //             headers: {
-        //                 "Content-Type": "application/json",
-        //                 Authorization: `Bearer ${accesstoken}`,
-        //             },
-        //         }
-        //     );
-        //     const logs = response.data.entries?.map((entry: any) => ({
-        //         id: entry.insertId || Math.random().toString(),
-        //         timestamp: new Date(entry.timestamp),
-        //         severity: entry.severity || "DEFAULT",
-        //         message: entry.textPayload || (entry.jsonPayload?.message || JSON.stringify(entry.jsonPayload) || ""),
-        //         resource: {
-        //             type: entry.resource?.type || "",
-        //             labels: entry.resource?.labels || {}
-        //         },
-        //         labels: entry.labels || {},
-        //         jsonPayload: entry.jsonPayload,
-        //         textPayload: entry.textPayload,
-        //         httpRequest: entry.httpRequest,
-        //         traceId: entry.trace,
-        //         spanId: entry.spanId,
-        //         logName: entry.logName
-        //     })) || [];
-        //     return {
-        //         logs,
-        //         nextPageToken: response.data.nextPageToken,
-        //         totalEntries: response.data.entries?.length || 0
-        //     };
-        // } catch (error: any) {
-        //     if (error.response?.data?.error?.message) {
-        //         throw new Error(error.response.data.error.message);
-        //     }
-        //     throw error;
-        // }
-        // If fallback is disabled or not available, return an empty response to satisfy the contract
-        return {
-            logs: [],
-            nextPageToken: undefined,
-            totalEntries: 0,
-        };
+        // If backend fails, throw the error
+        throw error;
     };
 
     return {

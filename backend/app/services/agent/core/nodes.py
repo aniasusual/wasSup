@@ -50,33 +50,6 @@ class UserQueryInputNode:
         # Initialize LLM service for NLP-based entity extraction and classification
         self.llm_service = LLMService()
         
-        # Keep fallback patterns for when LLM is not available
-        self.service_patterns = {
-            'cloud_run': r'\b(?:cloud.?run|cloudrun|run)\b',
-            'cloud_sql': r'\b(?:cloud.?sql|cloudsql|sql)\b',
-            'gce_instance': r'\b(?:gce|compute.?engine|compute.?instance|vm|instance)\b',
-            'gke_cluster': r'\b(?:gke|kubernetes|k8s|cluster)\b',
-            'app_engine': r'\b(?:app.?engine|gae)\b',
-            'cloud_functions': r'\b(?:cloud.?functions|functions|gcf)\b',
-            'load_balancer': r'\b(?:load.?balancer|lb|ingress)\b',
-            'cloud_storage': r'\b(?:cloud.?storage|storage|gcs|bucket)\b'
-        }
-        
-        # Severity patterns
-        self.severity_patterns = {
-            'error': r'\b(?:error|err|failed|failure|exception|critical|fatal)\b',
-            'warning': r'\b(?:warning|warn|caution|alert)\b',
-            'info': r'\b(?:info|information|debug|trace)\b'
-        }
-        
-        # Time range patterns
-        self.time_patterns = {
-            'last_hour': r'\b(?:last.?hour|past.?hour|hour)\b',
-            'last_day': r'\b(?:last.?day|past.?day|day|yesterday)\b',
-            'last_week': r'\b(?:last.?week|past.?week|week)\b',
-            'recent': r'\b(?:recent|recently|lately)\b'
-        }
-        
         self.logger.info("UserQueryInputNode initialized with LLM service")
     
     async def execute(self, state: AgentState) -> AgentState:
@@ -101,14 +74,14 @@ class UserQueryInputNode:
                 return self._update_state_with_error(state, validation_result.error)
             
             
-            # Extract entities using LLM (with fallback to regex)
+            # Extract entities using LLM
             extracted_entities = await self._extract_entities_nlp(state["question"])
             
-            # Classify query type using LLM (with fallback to rule-based)
+            # Classify query type using LLM
             classification_result = await self._classify_query_nlp(state["question"], extracted_entities)
             query_type = classification_result.get("query_type", "simple")
             
-            # Detect missing information using NLP (with fallback)
+            # Detect missing information using NLP
             missing_info_result = await self._detect_missing_info_nlp(state, extracted_entities)
             missing_info = missing_info_result.get("missing_information", [])
             
@@ -228,7 +201,7 @@ class UserQueryInputNode:
     
     async def _extract_entities_nlp(self, question: str) -> Dict[str, Any]:
         """
-        Extract entities from user question using NLP (LLM) with regex fallback.
+        Extract entities from user question using NLP (LLM).
         
         Args:
             question: User question text
@@ -236,33 +209,26 @@ class UserQueryInputNode:
         Returns:
             Dictionary of extracted entities
         """
+        # Use LLM service for entity extraction
+        entities = await self.llm_service.extract_entities(question)
         
-        try:
-            # Use LLM service for entity extraction
-            entities = await self.llm_service.extract_entities(question)
-            
-            # Convert LLM output to expected format
-            formatted_entities = {
-                "services": {f"resource.type={service}": True for service in entities.get("services", [])},
-                "severities": entities.get("severities", []),
-                "time_indicators": entities.get("time_indicators", []),
-                "keywords": entities.get("keywords", []),
-                "error_patterns": entities.get("error_patterns", []),
-                "http_status_codes": entities.get("http_status_codes", []),
-                "resource_identifiers": entities.get("resource_identifiers", []),
-                "intent_indicators": entities.get("intent_indicators", [])
-            }
-            
-            return formatted_entities
-            
-        except Exception as e:
-            self.logger.error(f"Error in NLP entity extraction: {str(e)}")
-            # Fallback to regex-based extraction
-            return self._extract_entities_regex(question)
+        # Convert LLM output to expected format
+        formatted_entities = {
+            "services": {f"resource.type={service}": True for service in entities.get("services", [])},
+            "severities": entities.get("severities", []),
+            "time_indicators": entities.get("time_indicators", []),
+            "keywords": entities.get("keywords", []),
+            "error_patterns": entities.get("error_patterns", []),
+            "http_status_codes": entities.get("http_status_codes", []),
+            "resource_identifiers": entities.get("resource_identifiers", []),
+            "intent_indicators": entities.get("intent_indicators", [])
+        }
+        
+        return formatted_entities
     
     async def _classify_query_nlp(self, question: str, entities: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Classify query type using NLP (LLM) with rule-based fallback.
+        Classify query type using NLP (LLM).
         
         Args:
             question: User question text
@@ -271,19 +237,13 @@ class UserQueryInputNode:
         Returns:
             Dictionary containing classification results
         """
-        try:
-            # Use LLM service for query classification
-            classification = await self.llm_service.classify_query(question, entities)
-            return classification
-            
-        except Exception as e:
-            self.logger.error(f"Error in NLP query classification: {str(e)}")
-            # Fallback to rule-based classification
-            return self._classify_query_regex(question, entities)
+        # Use LLM service for query classification
+        classification = await self.llm_service.classify_query(question, entities)
+        return classification
     
     async def _detect_missing_info_nlp(self, state: AgentState, entities: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Detect missing information using NLP (LLM) with regex fallback.
+        Detect missing information using NLP (LLM).
         
         Args:
             state: Current agent state
@@ -292,209 +252,13 @@ class UserQueryInputNode:
         Returns:
             Dictionary containing missing information analysis
         """
-        try:
-            # Use LLM service for intelligent missing information detection
-            missing_info_result = await self.llm_service.detect_missing_information(
-                state["question"], 
-                entities, 
-                state
-            )
-            return missing_info_result
-            
-        except Exception as e:
-            self.logger.error(f"Error in NLP missing info detection: {str(e)}")
-            # Fallback to rule-based detection
-            return self._detect_missing_info_regex(state, entities)
-    
-    def _extract_entities_regex(self, question: str) -> Dict[str, Any]:
-        """
-        Extract entities from the user question using pattern matching.
-        
-        Args:
-            question: User question text
-            
-        Returns:
-            Dictionary of extracted entities
-        """
-        question_lower = question.lower()
-        entities = {
-            "services": {},
-            "severities": [],
-            "time_indicators": [],
-            "keywords": [],
-            "numbers": [],
-            "urls": [],
-            "error_codes": []
-        }
-        
-        # Extract GCP services using dynamic patterns
-        for service_name, pattern in self.service_patterns.items():
-            if re.search(pattern, question_lower):
-                entities["services"][f"resource.type={service_name}"] = True
-        
-        # Additional intelligent service detection
-        if re.search(r'\b(?:kubernetes|k8s|container)\b', question_lower):
-            entities["services"]["resource.type=gke_cluster"] = True
-        if re.search(r'\b(?:function|lambda|serverless)\b', question_lower):
-            entities["services"]["resource.type=cloud_functions"] = True
-        if re.search(r'\b(?:database|db|sql|mysql|postgres)\b', question_lower):
-            entities["services"]["resource.type=cloud_sql"] = True
-        
-        # Extract severity levels with enhanced detection
-        for severity, pattern in self.severity_patterns.items():
-            if re.search(pattern, question_lower):
-                entities["severities"].append(severity.upper())
-        
-        # Additional intelligent severity detection
-        if re.search(r'\b(?:fail|failure|broken|down|crash)\b', question_lower):
-            entities["severities"].append("ERROR")
-        if re.search(r'\b(?:slow|latency|timeout|delay)\b', question_lower):
-            entities["severities"].append("WARNING")
-        if re.search(r'\b(?:info|information|status|health)\b', question_lower):
-            entities["severities"].append("INFO")
-        
-        # Extract time indicators with enhanced detection
-        for time_type, pattern in self.time_patterns.items():
-            if re.search(pattern, question_lower):
-                entities["time_indicators"].append(time_type)
-        
-        # Additional intelligent time detection
-        if re.search(r'\b(?:today|now|current)\b', question_lower):
-            entities["time_indicators"].append("today")
-        if re.search(r'\b(?:yesterday|previous day)\b', question_lower):
-            entities["time_indicators"].append("yesterday")
-        if re.search(r'\b(?:this week|past week)\b', question_lower):
-            entities["time_indicators"].append("this_week")
-        if re.search(r'\b(?:since|from|starting)\b', question_lower):
-            entities["time_indicators"].append("since_time")
-        
-        # Extract HTTP status codes
-        status_codes = re.findall(r'\b(?:5\d{2}|4\d{2})\b', question)
-        entities["error_codes"].extend(status_codes)
-        
-        # Extract numbers (could be time ranges, limits, etc.)
-        numbers = re.findall(r'\b\d+\b', question)
-        entities["numbers"].extend(numbers)
-        
-        # Extract URLs
-        urls = re.findall(r'https?://[^\s]+', question)
-        entities["urls"].extend(urls)
-        
-        # Extract general keywords with intelligent filtering
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'are', 'was', 'were', 'being', 'been', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'i'}
-        
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', question_lower)
-        keywords = [word for word in words if word not in stop_words]
-        
-        # Prioritize technical and GCP-related keywords
-        technical_terms = ['authentication', 'authorization', 'performance', 'latency', 'throughput', 'scalability', 'availability', 'reliability', 'monitoring', 'logging', 'debugging', 'troubleshooting', 'analysis', 'investigation', 'correlation', 'dependency', 'impact', 'failure', 'error', 'exception', 'timeout', 'connection', 'network', 'database', 'api', 'endpoint', 'service', 'microservice', 'container', 'pod', 'node', 'cluster', 'instance', 'resource', 'metric', 'alert', 'notification']
-        
-        # Boost technical terms in keywords
-        for term in technical_terms:
-            if term in question_lower and term not in keywords:
-                keywords.insert(0, term)
-        
-        entities["keywords"] = list(set(keywords))[:15]  # Increased limit for better context
-        
-        self.logger.debug(f"Extracted entities: {entities}")
-        return entities
-    
-    def _classify_query_regex(self, question: str, entities: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Classify the query type based on complexity and ambiguity.
-        
-        Args:
-            question: User question text
-            entities: Extracted entities
-            
-        Returns:
-            Dictionary containing classification results
-        """
-        question_lower = question.lower()
-        
-        # Complex queries: multiple services, complex relationships, analysis requests
-        has_multiple_services = len(entities.get("services", {})) > 1
-        has_analysis_keywords = any(keyword in question_lower for keyword in [
-            'analyze', 'compare', 'correlate', 'relationship', 'dependency', 'impact', 'root cause'
-        ])
-        
-        # Check for complex query indicators first (higher priority)
-        if has_analysis_keywords or has_multiple_services:
-            return {
-                "query_type": "complex",
-                "confidence": 0.8,
-                "reasoning": "Multiple services or analysis keywords detected",
-                "complexity_factors": ["multiple_services", "analysis_intent"],
-                "missing_information": []
-            }
-        
-        # Ambiguous queries: vague intent, missing critical information
-        has_ambiguous_words = any(word in question_lower for word in [
-            'something', 'anything', 'everything', 'all', 'some', 'maybe', 'possibly'
-        ])
-        
-        # Simple queries: clear intent, specific service, specific time range
-        has_specific_service = len(entities.get("services", {})) == 1
-        has_specific_time = len(entities.get("time_indicators", [])) == 1
-        has_clear_severity = len(entities.get("severities", [])) == 1
-        
-        is_vague = len(entities.get("keywords", [])) < 3 and not any([
-            has_specific_service, has_specific_time, has_clear_severity
-        ])
-        
-        if is_vague or has_ambiguous_words or (not has_specific_service and not has_specific_time):
-            return {
-                "query_type": "ambiguous",
-                "confidence": 0.9,
-                "reasoning": "Vague or ambiguous language detected",
-                "complexity_factors": ["vague_intent"],
-                "missing_information": ["service_specification", "time_range"]
-            }
-        else:
-            return {
-                "query_type": "simple",
-                "confidence": 0.7,
-                "reasoning": "Clear, specific query with focused intent",
-                "complexity_factors": [],
-                "missing_information": []
-            }
-    
-    def _detect_missing_info_regex(self, state: AgentState, entities: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Detect missing information that might be needed for effective investigation.
-        
-        Args:
-            state: Current agent state
-            entities: Extracted entities
-            
-        Returns:
-            Dictionary containing missing information analysis
-        """
-        missing = []
-        
-        # Check for missing services
-        if not entities.get("services") and not state.get("services"):
-            missing.append("service_specification")
-        
-        # Check for missing time range
-        if not entities.get("time_indicators") and not state.get("time_range"):
-            missing.append("time_range")
-        
-        # Check for missing severity focus
-        if not entities.get("severities"):
-            question_lower = state.get("question", "").lower()
-            if not any(word in question_lower for word in ["error", "warning", "info", "debug", "fail", "issue"]):
-                missing.append("severity_focus")
-        
-        # Check for project context (already validated as required)
-        if not state.get("project_id"):
-            missing.append("project_id")
-        
-        return {
-            "missing_information": missing,
-            "analysis": f"Rule-based analysis detected {len(missing)} missing information categories",
-            "needs_clarification": len(missing) > 0
-        }
+        # Use LLM service for intelligent missing information detection
+        missing_info_result = await self.llm_service.detect_missing_information(
+            state["question"], 
+            entities, 
+            state
+        )
+        return missing_info_result
     
     def _should_request_clarification(self, missing_info: List[str], query_type: str, classification_result: Optional[Dict[str, Any]] = None) -> bool:
         """

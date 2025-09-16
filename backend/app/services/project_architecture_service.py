@@ -7,6 +7,7 @@ from app.models.project_architecture import (
     ProjectArchitectureUpdate
 )
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -14,18 +15,34 @@ class ProjectArchitectureService:
     def __init__(self):
         self.collection_name = "project_architectures"
     
-    def get_collection(self):
-        """Get the project architectures collection"""
-        # Import here to avoid circular imports and ensure fresh connection
-        from app.core.database import db, get_database
-        
+    async def get_collection(self):
+        """Get the project architectures collection without blocking the event loop.
+
+        This defers the potentially blocking import work to a background thread
+        to satisfy environments that detect sync I/O in async contexts.
+        """
+        # Import db helpers in a thread to avoid import-time blocking I/O
+        def _import_db():
+            from app.core.database import db, get_database
+            return db, get_database
+
+        db, get_database = await asyncio.to_thread(_import_db)
+
         logger.info(f"Getting collection. db.database: {db.database}")
-        
-        # Try to get database from the global db instance first
+
+        # Try to get database from the global db instance first; if missing, try to connect
+        if db.database is None:
+            try:
+                from app.core.database import connect_to_mongo
+                await connect_to_mongo()
+                logger.info("Connected to MongoDB via lazy startup")
+            except Exception as conn_err:
+                logger.warning(f"Lazy MongoDB connect failed: {conn_err}")
+
         if db.database is not None:
             logger.info(f"Using global db instance: {db.database}")
             return db.database[self.collection_name]
-        
+
         # Fallback to get_database function
         logger.info("Trying get_database function")
         try:
@@ -39,7 +56,7 @@ class ProjectArchitectureService:
     async def create_architecture(self, architecture_data: ProjectArchitectureCreate) -> ProjectArchitecture:
         """Create a new project architecture"""
         try:
-            collection = self.get_collection()
+            collection = await self.get_collection()
             logger.info(f"Creating architecture for project: {architecture_data.project_id}")
             
             # Check if architecture already exists for this project
@@ -95,8 +112,9 @@ class ProjectArchitectureService:
     async def get_architecture_by_project(self, project_id: str) -> Optional[ProjectArchitecture]:
         """Get project architecture by project ID"""
         try:
-            collection = self.get_collection()
+            collection = await self.get_collection()
             doc = await collection.find_one({"project_id": project_id})
+            # print(f"Doc loda: {doc}")
             
             if doc:
                 return ProjectArchitecture(**doc)
@@ -109,7 +127,7 @@ class ProjectArchitectureService:
     async def update_architecture(self, project_id: str, update_data: ProjectArchitectureUpdate) -> Optional[ProjectArchitecture]:
         """Update project architecture"""
         try:
-            collection = self.get_collection()
+            collection = await self.get_collection()
             
             update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
             if not update_dict:
@@ -133,7 +151,7 @@ class ProjectArchitectureService:
     async def delete_architecture(self, project_id: str) -> bool:
         """Delete project architecture"""
         try:
-            collection = self.get_collection()
+            collection = await self.get_collection()
             result = await collection.delete_one({"project_id": project_id})
             return result.deleted_count > 0
             
