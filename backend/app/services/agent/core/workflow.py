@@ -15,7 +15,8 @@ from langgraph.graph import StateGraph, END
 try:
     # Try relative imports first (for normal usage)
     from ....models.agent import AgentState, WorkflowConfig, NodeResult
-    from .nodes import UserQueryInputNode
+    from .graph_nodes.user_query_input_node import UserQueryInputNode
+    from .graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
     from .architecture_loader_node import ArchitectureLoaderNode
 except ImportError:
     # Fall back to absolute imports (for LangGraph Studio)
@@ -23,7 +24,8 @@ except ImportError:
     import os
     sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
     from app.models.agent import AgentState, WorkflowConfig, NodeResult
-    from app.services.agent.core.nodes import UserQueryInputNode
+    from app.services.agent.core.graph_nodes.user_query_input_node import UserQueryInputNode
+    from app.services.agent.core.graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
     from app.services.agent.core.architecture_loader_node import ArchitectureLoaderNode
 
 logger = logging.getLogger(__name__)
@@ -66,13 +68,13 @@ class GCPLogInvestigationAgent:
         
         # Initialize node instances
         user_query_node = UserQueryInputNode(self.config)
-        
         architecture_loader_node = ArchitectureLoaderNode(self.config)
+        intent_analysis_node = IntentAndQueryAnalysisNode(self.config)
         
         # Add nodes to the workflow
         workflow.add_node("user_query_input", user_query_node.execute)
-        
         workflow.add_node("architecture_loader", architecture_loader_node.execute)
+        workflow.add_node("intent_and_query_analysis", intent_analysis_node.execute)
         
         # TODO: Add more nodes as we implement them
         # workflow.add_node("intent_classification", intent_classification_node.execute)
@@ -87,10 +89,19 @@ class GCPLogInvestigationAgent:
         # Set entry point
         workflow.set_entry_point("user_query_input")
         
-        # Add edges for Phase 1 flow: A -> A1 -> END
+        # Add edges for Phase 1 flow: A -> A1 -> (B + C combined) -> END
         workflow.add_edge("user_query_input", "architecture_loader")
+        workflow.add_edge("architecture_loader", "intent_and_query_analysis")
         
-        workflow.add_edge("architecture_loader", END)
+        # Conditional routing placeholder after intent analysis (future-proofing)
+        workflow.add_conditional_edges(
+            "intent_and_query_analysis",
+            self._route_after_intent_analysis,
+            {
+                "proceed": END,
+                "needs_clarification": END
+            }
+        )
         
         # TODO: Add conditional edges for routing decisions as we add more nodes
         # workflow.add_conditional_edges(
@@ -131,8 +142,14 @@ class GCPLogInvestigationAgent:
         
         if state.get("needs_clarification", False):
             return "clarification"
-        
         return "intent_classification"
+
+    def _route_after_intent_analysis(self, state: AgentState) -> str:
+        """Route decision after intent + query analysis.
+        Returns one of: 'needs_clarification', 'proceed'."""
+        if state.get("needs_clarification", False):
+            return "needs_clarification"
+        return "proceed"
     
     async def process_query(
         self,
