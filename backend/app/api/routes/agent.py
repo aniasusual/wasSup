@@ -151,13 +151,26 @@ async def process_agent_query_stream(
 
             # Process query with streaming
             async for chunk in agent.process_query_stream(query_with_auth, session_id):
-                if chunk.get("type") == "chunk":
+                ctype = chunk.get("type")
+                if ctype == "chunk":
                     # Stream text chunks
                     yield f"data: {_create_sse_data('chunk', chunk.get('content', ''), 'chunk')}\n\n"
-                elif chunk.get("type") == "result":
+                elif ctype == "node_event":
+                    # Forward node events with full payload in 'data'
+                    import json
+                    payload = {
+                        "type": "node_event",
+                        "node": chunk.get("node"),
+                        "title": chunk.get("title"),
+                        "status": chunk.get("status"),
+                        "data": chunk.get("data", {}),
+                        "timestamp": chunk.get("timestamp"),
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                elif ctype == "result":
                     # Send final result
                     yield f"data: {_create_sse_data('result', chunk.get('data', {}), 'result')}\n\n"
-                elif chunk.get("type") == "error":
+                elif ctype == "error":
                     # Send error
                     yield f"data: {_create_sse_data('error', chunk.get('message', 'Unknown error'), 'error')}\n\n"
             

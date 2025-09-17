@@ -17,6 +17,7 @@ try:
     from ....models.agent import AgentState, WorkflowConfig, NodeResult
     from .graph_nodes.user_query_input_node import UserQueryInputNode
     from .graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+    from .graph_nodes.session_complete_node import SessionCompleteNode
     from .architecture_loader_node import ArchitectureLoaderNode
 except ImportError:
     # Fall back to absolute imports (for LangGraph Studio)
@@ -26,6 +27,7 @@ except ImportError:
     from app.models.agent import AgentState, WorkflowConfig, NodeResult
     from app.services.agent.core.graph_nodes.user_query_input_node import UserQueryInputNode
     from app.services.agent.core.graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+    from app.services.agent.core.graph_nodes.session_complete_node import SessionCompleteNode
     from app.services.agent.core.architecture_loader_node import ArchitectureLoaderNode
 
 logger = logging.getLogger(__name__)
@@ -70,11 +72,13 @@ class GCPLogInvestigationAgent:
         user_query_node = UserQueryInputNode(self.config)
         architecture_loader_node = ArchitectureLoaderNode(self.config)
         intent_analysis_node = IntentAndQueryAnalysisNode(self.config)
+        session_complete_node = SessionCompleteNode(self.config)
         
         # Add nodes to the workflow
         workflow.add_node("user_query_input", user_query_node.execute)
         workflow.add_node("architecture_loader", architecture_loader_node.execute)
         workflow.add_node("intent_and_query_analysis", intent_analysis_node.execute)
+        workflow.add_node("session_complete", session_complete_node.execute)
         
         # TODO: Add more nodes as we implement them
         # workflow.add_node("intent_classification", intent_classification_node.execute)
@@ -93,15 +97,16 @@ class GCPLogInvestigationAgent:
         workflow.add_edge("user_query_input", "architecture_loader")
         workflow.add_edge("architecture_loader", "intent_and_query_analysis")
         
-        # Conditional routing placeholder after intent analysis (future-proofing)
+        # Route to session completion for Phase 1
         workflow.add_conditional_edges(
             "intent_and_query_analysis",
             self._route_after_intent_analysis,
             {
-                "proceed": END,
-                "needs_clarification": END
+                "proceed": "session_complete",
+                "needs_clarification": "session_complete",
             }
         )
+        workflow.add_edge("session_complete", END)
         
         # TODO: Add conditional edges for routing decisions as we add more nodes
         # workflow.add_conditional_edges(
@@ -204,53 +209,127 @@ class GCPLogInvestigationAgent:
             Streaming chunks of analysis results
         """
         try:
-            
             logger.info(f"Processing streaming query: {query_input.get('question', 'Unknown')}")
-            
+
             # Initialize state from input
-            initial_state = self._create_initial_state(query_input, session_id)
-            
-            # Execute the workflow
-            config = {"configurable": {"thread_id": session_id or "default"}}
-            final_state = await self.graph.ainvoke(initial_state, config=config)
-            
-            # Stream the analysis text if available
-            analysis = final_state.get("analysis", "")
+            state = self._create_initial_state(query_input, session_id)
+
+            # Instantiate nodes explicitly to step through for streaming updates
+            try:
+                # Local imports to avoid circulars
+                from .graph_nodes.user_query_input_node import UserQueryInputNode
+                from .architecture_loader_node import ArchitectureLoaderNode
+                from .graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+                from .graph_nodes.session_complete_node import SessionCompleteNode
+            except Exception:
+                # Fallback absolute imports
+                from app.services.agent.core.graph_nodes.user_query_input_node import UserQueryInputNode
+                from app.services.agent.core.architecture_loader_node import ArchitectureLoaderNode
+                from app.services.agent.core.graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+                from app.services.agent.core.graph_nodes.session_complete_node import SessionCompleteNode
+
+            user_query_node = UserQueryInputNode(self.config)
+            architecture_loader_node = ArchitectureLoaderNode(self.config)
+            intent_node = IntentAndQueryAnalysisNode(self.config)
+            session_node = SessionCompleteNode(self.config)
+
+            # Helper to emit a node event
+            async def emit_node_event(node_key: str, title: str, status: str, data: Dict[str, Any]):
+                yield {
+                    "type": "node_event",
+                    "node": node_key,
+                    "title": title,
+                    "status": status,
+                    "data": data,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+
+            # A: User Query Input
+            async for evt in emit_node_event("user_query_input", "User Query Input", "started", {
+                "question_preview": (state.get("question") or "")[:120],
+                "project_id": state.get("project_id")
+            }):
+                yield evt
+            state = await user_query_node.execute(state)
+            async for evt in emit_node_event("user_query_input", "User Query Input", "completed", {
+                "processed_question": state.get("processed_question"),
+            }):
+                yield evt
+
+            # A1: Architecture Loader
+            async for evt in emit_node_event("architecture_loader", "Load Project Architecture", "started", {
+                "project_id": state.get("project_id")
+            }):
+                yield evt
+            state = await architecture_loader_node.execute(state)
+            arch_ctx = state.get("architecture_context") or {}
+            arch_tool = ((state.get("tool_results") or {}).get("architecture_loader") or {})
+            async for evt in emit_node_event("architecture_loader", "Load Project Architecture", "completed", {
+                "parsing_method": arch_tool.get("parsing_method"),
+                "relevant_services": state.get("relevant_services"),
+                "insights": state.get("architecture_insights"),
+                "context_summary": arch_ctx.get("context_summary")
+            }):
+                yield evt
+
+            # B + C: Intent & Query Analysis
+            async for evt in emit_node_event("intent_and_query_analysis", "Intent & Query Analysis", "started", {
+                "note": "Extracting entities and classifying query"
+            }):
+                yield evt
+            state = await intent_node.execute(state)
+            nlp_tool = ((state.get("tool_results") or {}).get("nlp_analysis") or {})
+            class_result = nlp_tool.get("classification_result") or {}
+            async for evt in emit_node_event("intent_and_query_analysis", "Intent & Query Analysis", "completed", {
+                "query_type": state.get("query_type"),
+                "needs_clarification": state.get("needs_clarification"),
+                "missing_info": state.get("missing_info"),
+                "extracted_entities": state.get("extracted_entities"),
+                "classification": class_result
+            }):
+                yield evt
+            # UU: Session Complete
+            async for evt in emit_node_event("session_complete", "Session", "started", {
+                "note": "Marking session ready for next query"
+            }):
+                yield evt
+            state = await session_node.execute(state)
+            async for evt in emit_node_event("session_complete", "Session", "completed", {
+                "session_status": state.get("session_status"),
+                "session_ready_at": state.get("session_ready_at"),
+                "context_summary": state.get("context_summary"),
+            }):
+                yield evt
+
+            # Finally, stream the analysis text in chunks for a nicer UX
+            analysis = state.get("analysis", "")
             if analysis:
-                # Split analysis into chunks for streaming
                 words = analysis.split()
-                chunk_size = 5  # Stream 5 words at a time
-                
+                chunk_size = 5
+                import asyncio
                 for i in range(0, len(words), chunk_size):
                     chunk_words = words[i:i + chunk_size]
                     chunk_text = " ".join(chunk_words)
                     if i + chunk_size < len(words):
                         chunk_text += " "
-                    
                     yield {
                         "type": "chunk",
                         "content": chunk_text
                     }
-                    
-                    # Small delay to simulate streaming
-                    import asyncio
-                    await asyncio.sleep(0.05)
-            
+                    await asyncio.sleep(0.03)
+
             # Send final result
-            response = self._format_response(final_state)
+            response = self._format_response(state)
             yield {
                 "type": "result",
                 "data": response
             }
-            
-            logger.info(f"Streaming query processing completed successfully")
-            
+
+            logger.info("Streaming query processing completed successfully")
+
         except Exception as e:
             logger.error(f"Error in streaming query: {str(e)}", exc_info=True)
-            yield {
-                "type": "error",
-                "message": str(e)
-            }
+            yield {"type": "error", "message": str(e)}
     
     def _create_initial_state(self, query_input: Dict[str, Any], session_id: Optional[str]) -> AgentState:
         """
