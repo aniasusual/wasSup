@@ -22,6 +22,15 @@ type Message = {
   streamingStep?: string;
   streamingProgress?: { page: number; totalLogs: number };
   completeResult?: any;
+  events?: Array<{
+    node: string;
+    title: string;
+    status: string; // started | completed
+    data: any;
+    timestamp: string;
+    startedAt?: string;
+    completedAt?: string;
+  }>;
 };
 
 type Session = {
@@ -170,6 +179,7 @@ export const Chatbot = ({
       actions: [],
       needsClarification: false,
       isStreaming: true,
+      events: [],
     };
 
     setMessages((prev: Message[]) => [...prev, streamingMessage]);
@@ -221,6 +231,48 @@ export const Chatbot = ({
                 case "status":
                   // Skip status updates - no loading indicators needed
                   break;
+
+                case "node_event": {
+                  // Merge node events so each node has a single box (update status/data)
+                  const ev = {
+                    node: data.node || "",
+                    title: data.title || data.node || "",
+                    status: data.status || "",
+                    data: data.data || {},
+                    timestamp: data.timestamp || new Date().toISOString(),
+                  };
+                  setMessages((prev: Message[]) =>
+                    prev.map((msg) => {
+                      if (msg.id !== streamingMessageId) return msg;
+                      const existing = (msg.events || []);
+                      const idx = existing.findIndex((e) => e.node === ev.node);
+                      if (idx === -1) {
+                        // First time: record start timestamp as startedAt (if status provided)
+                        const first: any = {
+                          ...ev,
+                          startedAt: ev.timestamp,
+                        };
+                        return { ...msg, events: [...existing, first] };
+                      }
+                      const curr = existing[idx];
+                      const merged: any = {
+                        ...curr,
+                        title: ev.title || curr.title,
+                        status: ev.status || curr.status,
+                        data: { ...(curr.data || {}), ...(ev.data || {}) },
+                        timestamp: ev.timestamp || curr.timestamp,
+                        startedAt: curr.startedAt || ev.timestamp,
+                      };
+                      if ((ev.status || "").toLowerCase() === "completed") {
+                        merged.completedAt = ev.timestamp;
+                      }
+                      const next = existing.slice();
+                      next[idx] = merged;
+                      return { ...msg, events: next };
+                    })
+                  );
+                  break;
+                }
 
                 case "chunk":
                   // Handle streaming text chunks
@@ -340,6 +392,11 @@ export const Chatbot = ({
 
   return (
     <div className="flex flex-col h-full min-h-0 text-[13px]">
+      {/* Local animations */}
+      <style>{`
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in-up { animation: fadeInUp 180ms ease-out; }
+      `}</style>
       {/* Header */}
       <ChatHeader
         showSessions={showSessions}
@@ -365,10 +422,7 @@ export const Chatbot = ({
         {messages.map((message: Message) => (
           <div key={message.id} className="w-full animate-fade-in">
             {message.sender === "user" ? (
-              <UserMessage
-                text={message.text}
-                timestamp={message.timestamp}
-              />
+              <UserMessage text={message.text} timestamp={message.timestamp} />
             ) : (
               <AIMessage
                 text={message.text}
@@ -376,6 +430,7 @@ export const Chatbot = ({
                 actions={message.actions}
                 needsClarification={message.needsClarification}
                 isStreaming={message.isStreaming}
+                events={message.events}
               />
             )}
           </div>
