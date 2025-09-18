@@ -391,7 +391,7 @@ export const Chatbot = ({
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 text-[13px]">
+    <div className="flex flex-col h-full min-h-0 min-w-0 text-[13px]">
       {/* Local animations */}
       <style>{`
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -413,14 +413,14 @@ export const Chatbot = ({
       {/* Messages Area */}
       <div
         ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
+        className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-4 space-y-4"
       >
         {messages.length === 0 && (
           <EmptyState currentSessionId={currentSessionId} />
         )}
 
         {messages.map((message: Message) => (
-          <div key={message.id} className="w-full animate-fade-in">
+          <div key={message.id} className="w-full max-w-full min-w-0 animate-fade-in">
             {message.sender === "user" ? (
               <UserMessage text={message.text} timestamp={message.timestamp} />
             ) : (
@@ -430,11 +430,25 @@ export const Chatbot = ({
                 actions={message.actions}
                 needsClarification={message.needsClarification}
                 isStreaming={message.isStreaming}
+                isExpanded={isExpanded}
                 events={message.events}
               />
             )}
           </div>
         ))}
+
+        {isTyping && (
+          <div className="flex items-start gap-2.5 mb-3">
+            <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-slate-800/80 border border-slate-700/60" />
+            <div className="px-3 py-2 rounded-xl border border-slate-800/60 bg-slate-900/60">
+              <div className="flex items-center gap-1">
+                <span className="typing-dot w-2 h-2 rounded-full bg-slate-300/90"></span>
+                <span className="typing-dot w-2 h-2 rounded-full bg-slate-300/90"></span>
+                <span className="typing-dot w-2 h-2 rounded-full bg-slate-300/90"></span>
+              </div>
+            </div>
+          </div>
+        )}
 
 
       </div>

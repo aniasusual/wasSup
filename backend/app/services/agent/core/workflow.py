@@ -17,7 +17,13 @@ try:
     from ....models.agent import AgentState, WorkflowConfig, NodeResult
     from .graph_nodes.user_query_input_node import UserQueryInputNode
     from .graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+    from .graph_nodes.direct_filter_construction_node import DirectFilterConstructionNode
+    from .graph_nodes.single_stage_filter_construction_node import SingleStageFilterConstructionNode
+    from .graph_nodes.context_aware_enhancement_node import ContextAwareEnhancementNode
     from .graph_nodes.session_complete_node import SessionCompleteNode
+    from .graph_nodes.filter_validation_optimization_node import FilterValidationOptimizationNode
+    from .graph_nodes.primary_call_preparation_node import PrimaryCallPreparationNode
+    from .graph_nodes.execute_logging_api_node import ExecuteLoggingAPINode
     from .architecture_loader_node import ArchitectureLoaderNode
 except ImportError:
     # Fall back to absolute imports (for LangGraph Studio)
@@ -27,7 +33,13 @@ except ImportError:
     from app.models.agent import AgentState, WorkflowConfig, NodeResult
     from app.services.agent.core.graph_nodes.user_query_input_node import UserQueryInputNode
     from app.services.agent.core.graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+    from app.services.agent.core.graph_nodes.direct_filter_construction_node import DirectFilterConstructionNode
+    from app.services.agent.core.graph_nodes.single_stage_filter_construction_node import SingleStageFilterConstructionNode
+    from app.services.agent.core.graph_nodes.context_aware_enhancement_node import ContextAwareEnhancementNode
     from app.services.agent.core.graph_nodes.session_complete_node import SessionCompleteNode
+    from app.services.agent.core.graph_nodes.filter_validation_optimization_node import FilterValidationOptimizationNode
+    from app.services.agent.core.graph_nodes.primary_call_preparation_node import PrimaryCallPreparationNode
+    from app.services.agent.core.graph_nodes.execute_logging_api_node import ExecuteLoggingAPINode
     from app.services.agent.core.architecture_loader_node import ArchitectureLoaderNode
 
 logger = logging.getLogger(__name__)
@@ -72,13 +84,25 @@ class GCPLogInvestigationAgent:
         user_query_node = UserQueryInputNode(self.config)
         architecture_loader_node = ArchitectureLoaderNode(self.config)
         intent_analysis_node = IntentAndQueryAnalysisNode(self.config)
+        direct_filter_node = DirectFilterConstructionNode(self.config)
+        single_stage_node = SingleStageFilterConstructionNode(self.config)
+        context_aware_node = ContextAwareEnhancementNode(self.config)
         session_complete_node = SessionCompleteNode(self.config)
+        filter_opt_node = FilterValidationOptimizationNode(self.config)
+        primary_prep_node = PrimaryCallPreparationNode(self.config)
+        execute_api_node = ExecuteLoggingAPINode(self.config)
         
         # Add nodes to the workflow
         workflow.add_node("user_query_input", user_query_node.execute)
         workflow.add_node("architecture_loader", architecture_loader_node.execute)
         workflow.add_node("intent_and_query_analysis", intent_analysis_node.execute)
+        workflow.add_node("direct_filter", direct_filter_node.execute)
+        workflow.add_node("single_stage_filter", single_stage_node.execute)
+        workflow.add_node("context_aware_filter", context_aware_node.execute)
         workflow.add_node("session_complete", session_complete_node.execute)
+        workflow.add_node("filter_optimization", filter_opt_node.execute)
+        workflow.add_node("primary_call_prep", primary_prep_node.execute)
+        workflow.add_node("execute_logging_api", execute_api_node.execute)
         
         # TODO: Add more nodes as we implement them
         # workflow.add_node("intent_classification", intent_classification_node.execute)
@@ -97,15 +121,22 @@ class GCPLogInvestigationAgent:
         workflow.add_edge("user_query_input", "architecture_loader")
         workflow.add_edge("architecture_loader", "intent_and_query_analysis")
         
-        # Route to session completion for Phase 1
+        # Route to direct filter (D) for Phase 2 start
         workflow.add_conditional_edges(
             "intent_and_query_analysis",
             self._route_after_intent_analysis,
             {
-                "proceed": "session_complete",
-                "needs_clarification": "session_complete",
+                "proceed": "direct_filter",
+                "needs_clarification": "direct_filter",
             }
         )
+        workflow.add_edge("direct_filter", "single_stage_filter")
+        workflow.add_edge("single_stage_filter", "context_aware_filter")
+        # Phase 2 continuation: O -> P -> Q
+        workflow.add_edge("context_aware_filter", "filter_optimization")
+        workflow.add_edge("filter_optimization", "primary_call_prep")
+        workflow.add_edge("primary_call_prep", "execute_logging_api")
+        workflow.add_edge("execute_logging_api", "session_complete")
         workflow.add_edge("session_complete", END)
         
         # TODO: Add conditional edges for routing decisions as we add more nodes
@@ -220,17 +251,23 @@ class GCPLogInvestigationAgent:
                 from .graph_nodes.user_query_input_node import UserQueryInputNode
                 from .architecture_loader_node import ArchitectureLoaderNode
                 from .graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+                from .graph_nodes.direct_filter_construction_node import DirectFilterConstructionNode
+                from .graph_nodes.single_stage_filter_construction_node import SingleStageFilterConstructionNode
                 from .graph_nodes.session_complete_node import SessionCompleteNode
             except Exception:
                 # Fallback absolute imports
                 from app.services.agent.core.graph_nodes.user_query_input_node import UserQueryInputNode
                 from app.services.agent.core.architecture_loader_node import ArchitectureLoaderNode
                 from app.services.agent.core.graph_nodes.intent_and_query_analysis_node import IntentAndQueryAnalysisNode
+                from app.services.agent.core.graph_nodes.direct_filter_construction_node import DirectFilterConstructionNode
+                from app.services.agent.core.graph_nodes.single_stage_filter_construction_node import SingleStageFilterConstructionNode
                 from app.services.agent.core.graph_nodes.session_complete_node import SessionCompleteNode
 
             user_query_node = UserQueryInputNode(self.config)
             architecture_loader_node = ArchitectureLoaderNode(self.config)
             intent_node = IntentAndQueryAnalysisNode(self.config)
+            direct_filter_node = DirectFilterConstructionNode(self.config)
+            single_stage_node = SingleStageFilterConstructionNode(self.config)
             session_node = SessionCompleteNode(self.config)
 
             # Helper to emit a node event
@@ -241,6 +278,7 @@ class GCPLogInvestigationAgent:
                     "title": title,
                     "status": status,
                     "data": data,
+                    "state": state,
                     "timestamp": datetime.utcnow().isoformat()
                 }
 
@@ -288,6 +326,154 @@ class GCPLogInvestigationAgent:
                 "classification": class_result
             }):
                 yield evt
+            # D: Direct Filter Construction
+            async for evt in emit_node_event("direct_filter", "Direct Filter Construction", "started", {
+                "note": "Building simple Logging filter from entities"
+            }):
+                yield evt
+            state = await direct_filter_node.execute(state)
+            async for evt in emit_node_event("direct_filter", "Direct Filter Construction", "completed", {
+                "logging_filter": state.get("logging_filter"),
+                "order_by": state.get("order_by"),
+                "components": state.get("logging_filter_components"),
+            }):
+                yield evt
+            # M: Single-Stage Filter Construction
+            async for evt in emit_node_event("single_stage_filter", "Single-Stage Filter Construction", "started", {
+                "note": "Adding HTTP status and identifier hints"
+            }):
+                yield evt
+            state = await single_stage_node.execute(state)
+            async for evt in emit_node_event("single_stage_filter", "Single-Stage Filter Construction", "completed", {
+                "logging_filter": state.get("logging_filter"),
+                "components": state.get("logging_filter_components"),
+            }):
+                yield evt
+            # N: Context-Aware Enhancement
+            async for evt in emit_node_event("context_aware_filter", "Context-Aware Enhancement", "started", {
+                "note": "Leveraging architecture context to refine filter"
+            }):
+                yield evt
+            try:
+                from .graph_nodes.context_aware_enhancement_node import ContextAwareEnhancementNode
+            except Exception:
+                from app.services.agent.core.graph_nodes.context_aware_enhancement_node import ContextAwareEnhancementNode
+            context_node = ContextAwareEnhancementNode(self.config)
+            state = await context_node.execute(state)
+            async for evt in emit_node_event("context_aware_filter", "Context-Aware Enhancement", "completed", {
+                "logging_filter": state.get("logging_filter"),
+                "components": state.get("logging_filter_components"),
+                "context_enrichment": state.get("context_enrichment"),
+            }):
+                yield evt
+            # O: Filter Validation & Optimization
+            async for evt in emit_node_event("filter_optimization", "Filter Validation & Optimization", "started", {
+                "note": "Deduplicating and merging filter clauses"
+            }):
+                yield evt
+            try:
+                from .graph_nodes.filter_validation_optimization_node import FilterValidationOptimizationNode
+            except Exception:
+                from app.services.agent.core.graph_nodes.filter_validation_optimization_node import FilterValidationOptimizationNode
+            filter_opt_node = FilterValidationOptimizationNode(self.config)
+            state = await filter_opt_node.execute(state)
+            async for evt in emit_node_event("filter_optimization", "Filter Validation & Optimization", "completed", {
+                "logging_filter": state.get("logging_filter"),
+                "order_by": state.get("order_by"),
+                "optimization": state.get("logging_filter_optimization"),
+            }):
+                yield evt
+            # P: Primary API Call Preparation
+            async for evt in emit_node_event("primary_call_prep", "Primary API Call Preparation", "started", {
+                "note": "Assembling entries:list request parameters"
+            }):
+                yield evt
+            try:
+                from .graph_nodes.primary_call_preparation_node import PrimaryCallPreparationNode
+            except Exception:
+                from app.services.agent.core.graph_nodes.primary_call_preparation_node import PrimaryCallPreparationNode
+            primary_prep_node = PrimaryCallPreparationNode(self.config)
+            state = await primary_prep_node.execute(state)
+            req = state.get("logging_request") or {}
+            async for evt in emit_node_event("primary_call_prep", "Primary API Call Preparation", "completed", {
+                "project_id": req.get("project_id"),
+                "page_size": req.get("page_size"),
+                "order_by": req.get("order_by"),
+                "has_field_mask": bool(req.get("field_mask")),
+                "resource_names": req.get("resource_names"),
+            }):
+                yield evt
+            # Q: Execute Google Cloud Logging API (stream pages)
+            async for evt in emit_node_event("execute_logging_api", "Execute Logging API", "started", {
+                "note": "Calling entries:list and streaming pages",
+                "page_size": (state.get("logging_request") or {}).get("page_size"),
+                "order_by": (state.get("logging_request") or {}).get("order_by"),
+            }):
+                yield evt
+            try:
+                from ...gcp.logging_client import GCPLoggingClient
+            except Exception:
+                from app.services.gcp.logging_client import GCPLoggingClient
+            client = GCPLoggingClient()
+            req_opts = state.get("logging_request") or {}
+            access_token = state.get("access_token") or ""
+            total_returned = 0
+            collected = []
+            if not access_token:
+                async for evt in emit_node_event("execute_logging_api", "Execute Logging API", "error", {
+                    "message": "Missing access token"
+                }):
+                    yield evt
+            else:
+                async for pe in client.entries_list_stream(
+                    access_token=access_token,
+                    project_id=req_opts.get("project_id", ""),
+                    filter_str=req_opts.get("filter"),
+                    order_by=req_opts.get("order_by"),
+                    page_size=req_opts.get("page_size"),
+                    max_pages=req_opts.get("max_pages"),
+                    max_entries=req_opts.get("max_entries"),
+                    field_mask=req_opts.get("field_mask"),
+                    resource_names=req_opts.get("resource_names"),
+                ):
+                    if pe.get("type") == "page":
+                        total_returned += pe.get("returned", 0)
+                        entries = pe.get("entries", [])
+                        collected.extend(entries)
+                        sample = []
+                        for e in entries[:3]:
+                            sample.append({
+                                "timestamp": e.get("timestamp"),
+                                "severity": e.get("severity"),
+                                "message": e.get("message"),
+                            })
+                        async for evt in emit_node_event(
+                            "execute_logging_api", "Execute Logging API", "page",
+                            {"page_index": pe.get("page_index"), "returned": pe.get("returned"), "total_returned": total_returned, "sample": sample},
+                        ):
+                            yield evt
+                    elif pe.get("type") == "end":
+                        async for evt in emit_node_event(
+                            "execute_logging_api", "Execute Logging API", "completed",
+                            {"page_count": pe.get("page_count"), "returned": pe.get("returned"), "next_page_token": pe.get("next_page_token")},
+                        ):
+                            yield evt
+                    elif pe.get("type") == "error":
+                        async for evt in emit_node_event(
+                            "execute_logging_api", "Execute Logging API", "error",
+                            {"message": pe.get("message"), "status": pe.get("status")},
+                        ):
+                            yield evt
+                        break
+            # Store a capped set of results into state for UI
+            max_store = 100
+            updated_relevant = (collected[:max_store]) if collected else []
+            state = state.copy()
+            tool_results = state.get("tool_results") or {}
+            tool_results.update({
+                "logging_api": {"returned": len(collected), "stored": len(updated_relevant)}
+            })
+            state.update({"relevant_logs": updated_relevant, "tool_results": tool_results})
             # UU: Session Complete
             async for evt in emit_node_event("session_complete", "Session", "started", {
                 "note": "Marking session ready for next query"

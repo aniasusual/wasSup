@@ -736,7 +736,7 @@ export const Home = () => {
                 style={{ ['--left' as any]: `${splitPct}%` }}
               >
                 {/* Logs Section */}
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0">
                   {/* Logs Viewer Card */}
                   <div className="glass-card gradient-border hover-card flex flex-col h-[70vh]">
                     <div className="px-4 sm:px-6 xl:px-8 py-2 sm:py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
@@ -844,9 +844,9 @@ export const Home = () => {
                 </div>
 
                 {/* Chatbot Section */}
-                <div className="flex flex-col">
-                  <div className="glass-card gradient-border hover-card flex flex-col h-[70vh] animate-slide-up">
-                    <div className="h-full flex flex-col">
+                <div className="flex flex-col min-w-0">
+                  <div className="glass-card gradient-border hover-card flex flex-col h-[70vh] animate-slide-up min-w-0 overflow-hidden">
+                    <div className="h-full flex flex-col min-w-0">
                       <Chatbot
                         key="chatbot-main" // Use same key to maintain component identity
                         selectedServices={
