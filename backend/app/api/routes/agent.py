@@ -14,8 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from ...models.agent import WorkflowConfig
 from ...services.agent.core import GCPLogInvestigationAgent
-from ..helpers.authHelper import get_current_user, get_user_tokens, is_token_expired
-from ..routes.auth import refresh_token
+from ..helpers.authHelper import get_current_user, ensure_fresh_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -67,19 +66,11 @@ async def process_agent_query(
         Complete analysis results with investigation insights
     """
     try:
-        # Get user authentication tokens
-        user_token_data = await get_user_tokens(current_user)
-        if not user_token_data:
-            raise HTTPException(status_code=401, detail="User not authenticated")
-        
-        # Check if token is expired and refresh if needed
-        if is_token_expired(current_user):
-            await refresh_token(current_user)
-            user_token_data = await get_user_tokens(current_user)
-        
+        # Get a fresh Google access token
+        fresh_access_token = await ensure_fresh_access_token(current_user)
         # Add authentication information to query
         query_with_auth = query.copy()
-        query_with_auth["access_token"] = user_token_data["access_token"]
+        query_with_auth["access_token"] = fresh_access_token
         query_with_auth["user_id"] = current_user
         
         # Generate session ID if not provided
@@ -125,20 +116,16 @@ async def process_agent_query_stream(
     async def generate_stream():
         """Generate streaming response data."""
         try:
-            # Get user authentication tokens
-            user_token_data = await get_user_tokens(current_user)
-            if not user_token_data:
-                yield f"data: {_create_sse_data('error', 'User not authenticated')}\n\n"
+            # Get a fresh Google access token
+            try:
+                fresh_access_token = await ensure_fresh_access_token(current_user)
+            except Exception as e:
+                yield f"data: {_create_sse_data('error', f'Auth error: {str(e)}')}\n\n"
                 return
-            
-            # Check if token is expired and refresh if needed
-            if is_token_expired(current_user):
-                await refresh_token(current_user)
-                user_token_data = await get_user_tokens(current_user)
-            
+
             # Add authentication information to query
             query_with_auth = query.copy()
-            query_with_auth["access_token"] = user_token_data["access_token"]
+            query_with_auth["access_token"] = fresh_access_token
             query_with_auth["user_id"] = current_user
             
             # Generate session ID if not provided

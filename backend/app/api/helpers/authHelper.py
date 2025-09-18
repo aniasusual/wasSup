@@ -4,7 +4,8 @@ from fastapi import HTTPException, Request
 from dotenv import load_dotenv
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
+import httpx
 
 load_dotenv()
 
@@ -49,10 +50,6 @@ async def get_current_user(request: Request):
     if not user.is_active:
         raise HTTPException(status_code=401, detail="User account is inactive")
     
-    # Check if access token is expired
-    if datetime.utcnow() >= user.token_expires_at:
-        raise HTTPException(status_code=401, detail="Access token expired")
-    
     return email
 
 
@@ -92,5 +89,72 @@ async def remove_user_tokens(email: str):
 
 def is_token_expired(email: str) -> bool:
     """Check if user token is expired - synchronous version for compatibility"""
-    # This is now handled in get_current_user
+    # Deprecated: Token freshness should be handled via ensure_fresh_access_token
     return False 
+
+
+# ---- Google OAuth token refresh (YYY) ----
+
+GOOGLE_TOKEN_URL = os.getenv("GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+
+def _needs_refresh(expires_at: Optional[datetime], skew_seconds: int = 120) -> bool:
+    if not expires_at:
+        return True
+    try:
+        now = datetime.utcnow()
+        return now + timedelta(seconds=skew_seconds) >= expires_at
+    except Exception:
+        return True
+
+
+async def _refresh_google_access_token(email: str, refresh_token: str) -> Tuple[str, int]:
+    """Refresh Google access token via OAuth2 refresh_token grant.
+
+    Returns:
+        (access_token, expires_in_seconds)
+    """
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"Failed to refresh token: {resp.text}")
+    data = resp.json()
+    return data["access_token"], data.get("expires_in", 3600)
+
+
+async def ensure_fresh_access_token(email: str, skew_seconds: int = 120) -> str:
+    """Return a fresh Google access token for the user.
+
+    - Reads tokens from DB
+    - If near expiry (within skew) or expired, refreshes and updates DB
+    - Returns a valid access token string
+    """
+    from app.services.user_service import user_service
+
+    user = await user_service.get_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # If token is missing or close to expiry, refresh
+    if _needs_refresh(getattr(user, "token_expires_at", None), skew_seconds):
+        if not user.refresh_token:
+            raise HTTPException(status_code=401, detail="No refresh token available")
+        new_access, expires_in = await _refresh_google_access_token(email, user.refresh_token)
+        # Persist updated token
+        await user_service.update_user_tokens(email, new_access, user.refresh_token, expires_in)
+        return new_access
+
+    # Otherwise return current access token
+    if not user.access_token:
+        raise HTTPException(status_code=401, detail="Missing access token")
+    return user.access_token
