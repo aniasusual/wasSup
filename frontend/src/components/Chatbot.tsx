@@ -47,6 +47,7 @@ export const Chatbot = ({
   projectId = "",
   projectArchitecture = "",
   onOpenInsight = () => {},
+  onOpenLogsTab = () => {},
   isExpanded = false,
   onToggleExpand,
 }: any) => {
@@ -318,9 +319,9 @@ export const Chatbot = ({
                         ? {
                             ...msg,
                             text: finalResult?.analysis || accumulatedText,
-                            toolResults: finalResult?.toolResults || null,
+                            toolResults: finalResult?.tool_results || null,
                             actions: finalResult?.actions || [],
-                            needsClarification: finalResult?.needsClarification || false,
+                            needsClarification: finalResult?.needs_clarification || false,
                             isStreaming: false,
                             completeResult: finalResult,
                           }
@@ -432,23 +433,13 @@ export const Chatbot = ({
                 isStreaming={message.isStreaming}
                 isExpanded={isExpanded}
                 events={message.events}
+                onOpenLogsTab={(args: any) => onOpenLogsTab(args)}
               />
             )}
           </div>
         ))}
 
-        {isTyping && (
-          <div className="flex items-start gap-2.5 mb-3">
-            <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-slate-800/80 border border-slate-700/60" />
-            <div className="px-3 py-2 rounded-xl border border-slate-800/60 bg-slate-900/60">
-              <div className="flex items-center gap-1">
-                <span className="typing-dot w-2 h-2 rounded-full bg-slate-300/90"></span>
-                <span className="typing-dot w-2 h-2 rounded-full bg-slate-300/90"></span>
-                <span className="typing-dot w-2 h-2 rounded-full bg-slate-300/90"></span>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Typing indicator intentionally removed per request */}
 
 
       </div>

@@ -71,6 +71,7 @@ class ExecuteLoggingAPINode:
                 resource_names=req.get("resource_names"),
             )
 
+
             normalized = client.normalize_entries(result.get("entries", []) or [])
             store = normalized[:200]
 

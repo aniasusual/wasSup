@@ -165,11 +165,11 @@ class GCPLoggingClient:
             lines = [l for l in flt.split("\n") if l.strip()]
             preview = "\n".join(lines[:10])
             more = " …" if len(lines) > 10 else ""
-            print("entries:list request → orderBy=", body.get("orderBy"),
-                  " pageSize=", body.get("pageSize"),
-                  " fields_param=", bool(fields),
-                  " resourceNames=", body.get("resourceNames"))
-            print(f"Filter lines: {len(lines)}{more}\n{preview}")
+            # print("entries:list request → orderBy=", body.get("orderBy"),
+            #       " pageSize=", body.get("pageSize"),
+            #       " fields_param=", bool(fields),
+            #       " resourceNames=", body.get("resourceNames"))
+            # print(f"Filter lines: {len(lines)}{more}\n{preview}")
         except Exception:
             pass
         logger.info("Calling GCP Logging API entries:list")
@@ -321,10 +321,10 @@ class GCPLoggingClient:
             returned += len(page_entries)
 
             # Print page result summary
-            try:
-                print("entries:list page result → index=", page_count, " returned=", len(page_entries), " has_next=", bool(next_token))
-            except Exception:
-                pass
+            # try:
+            #     print("entries:list page result → index=", page_count, " returned=", len(page_entries), " has_next=", bool(next_token))
+            # except Exception:
+            #     pass
 
             # Stop conditions
             if max_entries is not None and returned >= max_entries:
@@ -338,10 +338,10 @@ class GCPLoggingClient:
 
         next_page_token = page_token if (max_pages or max_entries) else None
 
-        print(f"Entries: {entries}")
-        print(f"Page count: {page_count}")
-        print(f"Returned: {len(entries[:max_entries] if max_entries else entries)}")
-        print(f"Next page token: {next_page_token}")
+        print(f"Entries: {entries} lodae")
+        # print(f"Page count: {page_count}")
+        # print(f"Returned: {len(entries[:max_entries] if max_entries else entries)}")
+        # print(f"Next page token: {next_page_token}")
 
         return {
             "entries": entries[:max_entries] if max_entries else entries,

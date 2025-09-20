@@ -18,6 +18,7 @@ interface AIMessageProps {
     startedAt?: string;
     completedAt?: string;
   }>;
+  onOpenLogsTab?: (args: { entries: any[]; title?: string }) => void;
 }
 
 export const AIMessage: React.FC<AIMessageProps> = ({
@@ -27,7 +28,8 @@ export const AIMessage: React.FC<AIMessageProps> = ({
   needsClarification = false,
   isStreaming = false,
   isExpanded = false,
-  events = []
+  events = [],
+  onOpenLogsTab,
 }) => {
   // Order events for stable visual progress
   const orderedEvents = useMemo(() => {
@@ -226,12 +228,38 @@ export const AIMessage: React.FC<AIMessageProps> = ({
             isStreaming={isStreaming}
             completeResult={completeResult}
           />
+          {!!(completeResult?.relevant_logs?.length) && (
+            <div className="mt-3">
+              <button
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-blue-700/60 bg-blue-900/30 text-blue-300 hover:bg-blue-900/50 transition-colors text-[12px]"
+                onClick={() => onOpenLogsTab && onOpenLogsTab({
+                  entries: completeResult.relevant_logs,
+                  title: `AI Results (${completeResult.relevant_logs.length})`
+                })}
+                title="Open these entries in a logs tab"
+              >
+                Open in Logs Tab
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Relevant Logs (from Execute Logging API) */}
         {!!(completeResult?.relevant_logs?.length) && (
           <div className="px-5 pb-5">
-            <div className="mb-2 text-[12px] text-slate-400">Logs returned: {completeResult.relevant_logs.length}</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[12px] text-slate-400">Logs returned: {completeResult.relevant_logs.length}</div>
+              <button
+                className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border border-blue-700/60 bg-blue-900/30 text-blue-300 hover:bg-blue-900/50 transition-colors text-[12px]"
+                onClick={() => onOpenLogsTab && onOpenLogsTab({
+                  entries: completeResult.relevant_logs,
+                  title: `AI Results (${completeResult.relevant_logs.length})`
+                })}
+                title="Open these entries in a logs tab"
+              >
+                Open in Logs Tab
+              </button>
+            </div>
             <div className="space-y-2">
               {completeResult.relevant_logs.slice(0, 20).map((log: any, idx: number) => {
                 const severity = String(log?.severity || 'DEFAULT');
@@ -304,6 +332,16 @@ export const AIMessage: React.FC<AIMessageProps> = ({
               {completeResult.relevant_logs.length > 20 && (
                 <div className="text-[12px] text-slate-400">Showing first 20 entries…</div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* When no logs returned, still show a clear, compact notice */}
+        {completeResult && Array.isArray(completeResult.relevant_logs) && completeResult.relevant_logs.length === 0 && (
+          <div className="px-5 pb-5">
+            <div className="border border-slate-800/60 rounded-xl overflow-hidden bg-slate-900/40">
+              <div className="px-3 py-2 text-slate-300 text-[13px]">No matching logs found for the current query.</div>
+              <div className="px-3 pb-3 text-slate-400 text-[12px]">Try broadening the time range or lowering severity.</div>
             </div>
           </div>
         )}

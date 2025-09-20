@@ -275,6 +275,42 @@ export const Home = () => {
     void fetchLogsForTab(newTab);
   };
 
+  // Open a new tab populated with logs returned from the chatbot
+  const handleOpenLogsTabFromChat = ({ entries, title }: { entries: any[]; title?: string }) => {
+    const tabId = `chat-logs-${Date.now()}`;
+    const newTab: LogTab = {
+      id: tabId,
+      title: title || `AI Results (${entries?.length || 0})`,
+      serviceId: "chat_results",
+      isActive: true,
+      filters: {
+        severity: [],
+        resourceType: "chat_results",
+        logType: [],
+        sourceLocation: "",
+        userAccount: "",
+        requestId: "",
+        timeRange: "custom",
+        customQuery: "",
+        customStartTime: "",
+        customEndTime: "",
+      },
+      query: "",
+      lastUpdated: new Date(),
+      type: "insight",
+    } as any;
+
+    setTabs((prev) => [
+      ...prev.map((t) => ({ ...t, isActive: false })),
+      newTab,
+    ]);
+    // Attach provided entries directly to the tab logs store
+    setTabLogs((prev) => ({ ...prev, [tabId]: Array.isArray(entries) ? entries : [] }));
+    setTabNextTokens((prev) => ({ ...prev, [tabId]: null }));
+    setActiveTabId(tabId);
+    setSelectedService(undefined);
+  };
+
   // Update active tab when changed
   useEffect(() => {
     setTabs((prev) =>
@@ -722,6 +758,7 @@ export const Home = () => {
                       projectId={selectedProject}
                       projectArchitecture={projectArchitecture}
                       onOpenInsight={handleOpenInsightFromChat}
+                      onOpenLogsTab={handleOpenLogsTabFromChat}
                       isExpanded={isChatbotExpanded}
                       onToggleExpand={handleChatbotToggle}
                     />
@@ -847,7 +884,7 @@ export const Home = () => {
                 <div className="flex flex-col min-w-0">
                   <div className="glass-card gradient-border hover-card flex flex-col h-[70vh] animate-slide-up min-w-0 overflow-hidden">
                     <div className="h-full flex flex-col min-w-0">
-                      <Chatbot
+                    <Chatbot
                         key="chatbot-main" // Use same key to maintain component identity
                         selectedServices={
                           selectedService ? [selectedService.id] : []
@@ -855,6 +892,7 @@ export const Home = () => {
                         projectId={selectedProject}
                         projectArchitecture={projectArchitecture}
                         onOpenInsight={handleOpenInsightFromChat}
+                        onOpenLogsTab={handleOpenLogsTabFromChat}
                         isExpanded={isChatbotExpanded}
                         onToggleExpand={handleChatbotToggle}
                       />
