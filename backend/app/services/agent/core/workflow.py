@@ -24,6 +24,7 @@ try:
     from .graph_nodes.filter_validation_optimization_node import FilterValidationOptimizationNode
     from .graph_nodes.primary_call_preparation_node import PrimaryCallPreparationNode
     from .graph_nodes.execute_logging_api_node import ExecuteLoggingAPINode
+    from .graph_nodes.present_results_node import PresentResultsNode
     from .architecture_loader_node import ArchitectureLoaderNode
 except ImportError:
     # Fall back to absolute imports (for LangGraph Studio)
@@ -40,6 +41,7 @@ except ImportError:
     from app.services.agent.core.graph_nodes.filter_validation_optimization_node import FilterValidationOptimizationNode
     from app.services.agent.core.graph_nodes.primary_call_preparation_node import PrimaryCallPreparationNode
     from app.services.agent.core.graph_nodes.execute_logging_api_node import ExecuteLoggingAPINode
+    from app.services.agent.core.graph_nodes.present_results_node import PresentResultsNode
     from app.services.agent.core.architecture_loader_node import ArchitectureLoaderNode
 
 logger = logging.getLogger(__name__)
@@ -91,6 +93,7 @@ class GCPLogInvestigationAgent:
         filter_opt_node = FilterValidationOptimizationNode(self.config)
         primary_prep_node = PrimaryCallPreparationNode(self.config)
         execute_api_node = ExecuteLoggingAPINode(self.config)
+        present_results_node = PresentResultsNode(self.config)
         
         # Add nodes to the workflow
         workflow.add_node("user_query_input", user_query_node.execute)
@@ -103,6 +106,7 @@ class GCPLogInvestigationAgent:
         workflow.add_node("filter_optimization", filter_opt_node.execute)
         workflow.add_node("primary_call_prep", primary_prep_node.execute)
         workflow.add_node("execute_logging_api", execute_api_node.execute)
+        workflow.add_node("present_results", present_results_node.execute)
         
         # TODO: Add more nodes as we implement them
         # workflow.add_node("intent_classification", intent_classification_node.execute)
@@ -132,11 +136,12 @@ class GCPLogInvestigationAgent:
         )
         workflow.add_edge("direct_filter", "single_stage_filter")
         workflow.add_edge("single_stage_filter", "context_aware_filter")
-        # Phase 2 continuation: O -> P -> Q
+        # Phase 2 continuation: O -> P -> Q -> PP
         workflow.add_edge("context_aware_filter", "filter_optimization")
         workflow.add_edge("filter_optimization", "primary_call_prep")
         workflow.add_edge("primary_call_prep", "execute_logging_api")
-        workflow.add_edge("execute_logging_api", "session_complete")
+        workflow.add_edge("execute_logging_api", "present_results")
+        workflow.add_edge("present_results", "session_complete")
         workflow.add_edge("session_complete", END)
         
         # TODO: Add conditional edges for routing decisions as we add more nodes
@@ -474,6 +479,24 @@ class GCPLogInvestigationAgent:
                 "logging_api": {"returned": len(collected), "stored": len(updated_relevant)}
             })
             state.update({"relevant_logs": updated_relevant, "tool_results": tool_results})
+
+            # PP: Present Results
+            try:
+                from .graph_nodes.present_results_node import PresentResultsNode
+            except Exception:
+                from app.services.agent.core.graph_nodes.present_results_node import PresentResultsNode
+            present_node = PresentResultsNode(self.config)
+            async for evt in emit_node_event("present_results", "Present Results", "started", {
+                "note": "Formatting results for UI"
+            }):
+                yield evt
+            state = await present_node.execute(state)
+            async for evt in emit_node_event("present_results", "Present Results", "completed", {
+                "total": (state.get("presentation") or {}).get("total"),
+                "severity_breakdown": (state.get("presentation") or {}).get("severity_breakdown"),
+            }):
+                yield evt
+
             # UU: Session Complete
             async for evt in emit_node_event("session_complete", "Session", "started", {
                 "note": "Marking session ready for next query"
