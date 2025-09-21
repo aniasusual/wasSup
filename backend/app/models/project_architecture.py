@@ -37,6 +37,19 @@ class ProjectArchitecture(ProjectArchitectureBase):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    # Phase 4: Architecture Topology (WW)
+    topology_services: Optional[list] = Field(default=None, description="List of normalized services in the topology map")
+    topology_dependencies: Optional[list] = Field(default=None, description="List of directed dependencies between services")
+    # Phase 4: Service Registry (XX)
+    service_registry: Optional[list] = Field(default=None, description="Normalized service registry: resources and configurations")
+    # Phase 4: Data Flow Patterns (YY)
+    data_flow_patterns: Optional[list] = Field(default=None, description="Request paths and communication flows across services")
+    # Phase 4: Infrastructure Layout (ZZ)
+    infrastructure_layout: Optional[list] = Field(default=None, description="Networks, clusters, databases and related infra components")
+    # Phase 4: Performance Baselines (AAA)
+    performance_baselines: Optional[list] = Field(default=None, description="Normal performance/error baselines per service")
+    # Phase 4: Failure Patterns (BBB)
+    failure_patterns: Optional[list] = Field(default=None, description="Historical incident knowledge and common failure patterns")
 
     class Config:
         populate_by_name = True

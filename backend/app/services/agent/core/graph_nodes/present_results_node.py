@@ -47,13 +47,14 @@ class PresentResultsNode:
                 severities[sev] = severities.get(sev, 0) + 1
 
             sev_parts = [f"{k}:{v}" for k, v in sorted(severities.items(), key=lambda kv: (-kv[1], kv[0]))]
-            summary_line = f"Returned {total} entries" + (f" | Severities: {', '.join(sev_parts)}" if sev_parts else "")
-
             analysis = state.get("analysis") or ""
             new_analysis_blocks = [
-                "\n## 📊 Results Summary",
-                summary_line,
+                "",
+                "SECTION: Results Summary",
             ]
+            new_analysis_blocks.append(f"  - Entries returned: {total}")
+            if sev_parts:
+                new_analysis_blocks.append(f"  - Severities: {', '.join(sev_parts)}")
             new_analysis = (analysis + "\n" + "\n".join(new_analysis_blocks)).strip()
 
             presentation = {
@@ -79,4 +80,3 @@ class PresentResultsNode:
                 "error": f"Results presentation failed: {e}",
             })
             return updated
-

@@ -105,40 +105,41 @@ class IntentAndQueryAnalysisNode:
     def _generate_analysis(self, state: AgentState, extracted_entities: Dict[str, Any], classification_result: Dict[str, Any], needs_clarification: bool) -> str:
         question = state.get("question", "")
         project_id = state.get("project_id", "")
-        parts: List[str] = []
-        parts.append(f"## 🔍 **Query Analysis**")
-        parts.append(f"**Original Query:** {question}")
-        parts.append(f"**Project ID:** {project_id}")
+        parts: List[str] = ["", "SECTION: Query Analysis"]
+        parts.append(f"  - Original query: {question}")
+        parts.append(f"  - Project ID: {project_id}")
         if extracted_entities.get("services"):
             services = list(extracted_entities["services"].keys())
-            parts.append(f"**Target Services:** {', '.join(services)}")
+            parts.append(f"  - Target services: {', '.join(services)}")
         if extracted_entities.get("severities"):
-            parts.append(f"**Severity Levels:** {', '.join(extracted_entities['severities'])}")
+            parts.append(f"  - Severity levels: {', '.join(extracted_entities['severities'])}")
         if extracted_entities.get("time_indicators"):
-            parts.append(f"**Time Range:** {', '.join(extracted_entities['time_indicators'])}")
+            parts.append(f"  - Time indicators: {', '.join(extracted_entities['time_indicators'])}")
         qtype = classification_result.get("query_type", "unknown")
         confidence = classification_result.get("confidence", 0.0)
         reasoning = classification_result.get("reasoning", "")
-        parts.append(f"\n## 🧠 **Intelligence Analysis**")
-        parts.append(f"**Query Type:** {qtype.title()}")
-        parts.append(f"**Confidence:** {confidence:.1%}")
-        parts.append(f"**Reasoning:** {reasoning}")
+        parts.append("\nSECTION: Intelligence Assessment")
+        parts.append(f"  - Query type: {qtype}")
+        parts.append(f"  - Confidence: {confidence:.1%}")
+        parts.append(f"  - Reasoning: {reasoning}")
         if needs_clarification:
-            parts.append(f"\n## ❓ **Clarification Needed**")
-            parts.append("I need some additional information to provide the most accurate results:")
+            parts.append("\nSECTION: Clarification Requirements")
             for question in classification_result.get("clarification_questions", []):
-                parts.append(f"• {question}")
+                parts.append(f"  - Clarification item: {question}")
         else:
-            parts.append(f"\n## ✅ **Ready to Proceed**")
-            parts.append("I have enough information to start the investigation. I'll now:")
-            parts.append("1. **Fetch logs** from the specified GCP services")
-            parts.append("2. **Filter by severity** and time range")
-            parts.append("3. **Analyze patterns** and provide insights")
-            parts.append("4. **Suggest actions** based on findings")
+            parts.append("\nSECTION: Ready To Proceed")
+            steps = [
+                "fetch logs",
+                "apply severity and time filters",
+                "analyze patterns",
+                "prepare guidance",
+            ]
+            for step in steps:
+                parts.append(f"  - Step: {step}")
         suggested_scope = classification_result.get("suggested_scope", "")
         if suggested_scope:
-            parts.append(f"\n## 🎯 **Suggested Investigation Scope**")
-            parts.append(suggested_scope)
+            parts.append("\nSECTION: Suggested Investigation Scope")
+            parts.append(f"  - Scope: {suggested_scope}")
         return "\n".join(parts)
 
     def _update_state_with_error(self, state: AgentState, error_message: str) -> AgentState:
@@ -153,4 +154,3 @@ class IntentAndQueryAnalysisNode:
             }]
         })
         return updated_state
-
