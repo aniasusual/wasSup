@@ -159,6 +159,202 @@ class ProjectArchitectureService:
             logger.error(f"Error deleting project architecture: {e}")
             raise
     
+    # ----------------------------
+    # Phase 4: Topology Map (WW)
+    # ----------------------------
+    async def update_topology_map(self, project_id: str, services: list, dependencies: list) -> bool:
+        """
+        Update the Project Topology Map (WW) for a project.
+        Overwrites the topology sections with the provided lists.
+        """
+        try:
+            collection = await self.get_collection()
+            update = {
+                "topology_services": services,
+                "topology_dependencies": dependencies,
+                "updated_at": datetime.utcnow()
+            }
+            res = await collection.update_one({"project_id": project_id}, {"$set": update})
+            return res.matched_count > 0
+        except Exception as e:
+            logger.error(f"Error updating topology map for {project_id}: {e}")
+            raise
+
+    async def get_topology_map(self, project_id: str) -> dict:
+        """Return the topology map sections or empty defaults."""
+        try:
+            collection = await self.get_collection()
+            doc = await collection.find_one({"project_id": project_id}, {"topology_services": 1, "topology_dependencies": 1, "_id": 0})
+            if not doc:
+                return {"services": [], "dependencies": []}
+            return {
+                "services": doc.get("topology_services") or [],
+                "dependencies": doc.get("topology_dependencies") or []
+            }
+        except Exception as e:
+            logger.error(f"Error getting topology map for {project_id}: {e}")
+            raise
+
+    # ----------------------------
+    # Phase 4: Service Registry (XX)
+    # ----------------------------
+    async def update_service_registry(self, project_id: str, registry: list) -> bool:
+        """
+        Update the Service Registry (XX) for a project.
+        Overwrites the registry with the provided list.
+        """
+        try:
+            collection = await self.get_collection()
+            update = {
+                "service_registry": registry,
+                "updated_at": datetime.utcnow()
+            }
+            res = await collection.update_one({"project_id": project_id}, {"$set": update})
+            return res.matched_count > 0
+        except Exception as e:
+            logger.error(f"Error updating service registry for {project_id}: {e}")
+            raise
+
+    async def get_service_registry(self, project_id: str) -> list:
+        """Return the service registry or empty list."""
+        try:
+            collection = await self.get_collection()
+            doc = await collection.find_one({"project_id": project_id}, {"service_registry": 1, "_id": 0})
+            if not doc:
+                return []
+            return doc.get("service_registry") or []
+        except Exception as e:
+            logger.error(f"Error getting service registry for {project_id}: {e}")
+            raise
+
+    # ----------------------------
+    # Phase 4: Data Flow Patterns (YY)
+    # ----------------------------
+    async def update_data_flow_patterns(self, project_id: str, flows: list) -> bool:
+        """
+        Update Data Flow Patterns (YY) for a project.
+        Overwrites the data_flow_patterns with the provided list.
+        """
+        try:
+            collection = await self.get_collection()
+            update = {
+                "data_flow_patterns": flows,
+                "updated_at": datetime.utcnow()
+            }
+            res = await collection.update_one({"project_id": project_id}, {"$set": update})
+            return res.matched_count > 0
+        except Exception as e:
+            logger.error(f"Error updating data flow patterns for {project_id}: {e}")
+            raise
+
+    async def get_data_flow_patterns(self, project_id: str) -> list:
+        """Return data flow patterns or empty list."""
+        try:
+            collection = await self.get_collection()
+            doc = await collection.find_one({"project_id": project_id}, {"data_flow_patterns": 1, "_id": 0})
+            if not doc:
+                return []
+            return doc.get("data_flow_patterns") or []
+        except Exception as e:
+            logger.error(f"Error getting data flow patterns for {project_id}: {e}")
+            raise
+
+    # ----------------------------
+    # Phase 4: Infrastructure Layout (ZZ)
+    # ----------------------------
+    async def update_infrastructure_layout(self, project_id: str, infra: list) -> bool:
+        """
+        Update Infrastructure Layout (ZZ) for a project.
+        Overwrites the infrastructure_layout with the provided list.
+        """
+        try:
+            collection = await self.get_collection()
+            update = {
+                "infrastructure_layout": infra,
+                "updated_at": datetime.utcnow()
+            }
+            res = await collection.update_one({"project_id": project_id}, {"$set": update})
+            return res.matched_count > 0
+        except Exception as e:
+            logger.error(f"Error updating infrastructure layout for {project_id}: {e}")
+            raise
+
+    async def get_infrastructure_layout(self, project_id: str) -> list:
+        """Return infrastructure layout or empty list."""
+        try:
+            collection = await self.get_collection()
+            doc = await collection.find_one({"project_id": project_id}, {"infrastructure_layout": 1, "_id": 0})
+            if not doc:
+                return []
+            return doc.get("infrastructure_layout") or []
+        except Exception as e:
+            logger.error(f"Error getting infrastructure layout for {project_id}: {e}")
+            raise
+
+    # ----------------------------
+    # Phase 4: Performance Baselines (AAA)
+    # ----------------------------
+    async def update_performance_baselines(self, project_id: str, baselines: list) -> bool:
+        """
+        Update Performance Baselines (AAA) for a project.
+        Overwrites the performance_baselines with the provided list.
+        """
+        try:
+            collection = await self.get_collection()
+            update = {
+                "performance_baselines": baselines,
+                "updated_at": datetime.utcnow()
+            }
+            res = await collection.update_one({"project_id": project_id}, {"$set": update})
+            return res.matched_count > 0
+        except Exception as e:
+            logger.error(f"Error updating performance baselines for {project_id}: {e}")
+            raise
+
+    async def get_performance_baselines(self, project_id: str) -> list:
+        """Return performance baselines or empty list."""
+        try:
+            collection = await self.get_collection()
+            doc = await collection.find_one({"project_id": project_id}, {"performance_baselines": 1, "_id": 0})
+            if not doc:
+                return []
+            return doc.get("performance_baselines") or []
+        except Exception as e:
+            logger.error(f"Error getting performance baselines for {project_id}: {e}")
+            raise
+
+    # ----------------------------
+    # Phase 4: Failure Patterns (BBB)
+    # ----------------------------
+    async def update_failure_patterns(self, project_id: str, patterns: list) -> bool:
+        """
+        Update Failure Patterns (BBB) for a project.
+        Overwrites the failure_patterns with the provided list.
+        """
+        try:
+            collection = await self.get_collection()
+            update = {
+                "failure_patterns": patterns,
+                "updated_at": datetime.utcnow()
+            }
+            res = await collection.update_one({"project_id": project_id}, {"$set": update})
+            return res.matched_count > 0
+        except Exception as e:
+            logger.error(f"Error updating failure patterns for {project_id}: {e}")
+            raise
+
+    async def get_failure_patterns(self, project_id: str) -> list:
+        """Return failure patterns or empty list."""
+        try:
+            collection = await self.get_collection()
+            doc = await collection.find_one({"project_id": project_id}, {"failure_patterns": 1, "_id": 0})
+            if not doc:
+                return []
+            return doc.get("failure_patterns") or []
+        except Exception as e:
+            logger.error(f"Error getting failure patterns for {project_id}: {e}")
+            raise
+    
     async def list_architectures(self, skip: int = 0, limit: int = 100) -> List[ProjectArchitecture]:
         """List all project architectures"""
         try:

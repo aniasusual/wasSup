@@ -53,59 +53,85 @@ class DirectFilterConstructionNode:
                 "extras": [],
             }
 
-            # 1) resource.type from extracted services (keys like "resource.type=cloud_run_revision")
-            services = extracted.get("services") or {}
-            resource_types: List[str] = []
-            for key in services.keys():
-                if key.startswith("resource.type="):
-                    rtype = key.split("=", 1)[1]
-                    if rtype:
-                        resource_types.append(rtype)
-            # If user provided services list in state, include those too
-            user_services = state.get("services") or []
-            for s in user_services:
-                if s and s not in resource_types:
-                    resource_types.append(s)
-            # Deduplicate and build OR lines if multiple
-            resource_types = list(dict.fromkeys(resource_types))
-            if len(resource_types) == 1:
-                filter_lines.append(f"resource.type=\"{resource_types[0]}\"")
-            elif len(resource_types) > 1:
-                ors = " OR ".join([f"resource.type=\"{rt}\"" for rt in resource_types])
-                filter_lines.append(f"({ors})")
-            components["resource_types"] = resource_types
+            # 1) resource.type and label hints via Filter Components (HHH)
+            try:
+                from .. import filter_components as fc  # relative import within core
+            except Exception:
+                from app.services.agent.core import filter_components as fc
 
-            # 2) severity from extracted
-            severities: List[str] = (extracted.get("severities") or [])
-            severities = [s.upper() for s in severities if isinstance(s, str)]
-            severities = [s for s in severities if s in _SEVERITY_INDEX]
-            if severities:
-                # Choose least severe (broadest) among provided → severity>=that
-                min_sev = min(severities, key=lambda s: _SEVERITY_INDEX[s])
-                filter_lines.append(f"severity>={min_sev}")
-                components["severity"] = {"threshold": min_sev, "provided": severities}
+            candidate_types: List[str] = fc.derive_resource_types_from_state(state)
+            # Resolve canonical resource types strictly via LLM (no local aliases)
+            try:
+                from ..llm_service import LLMService
+            except Exception:
+                from app.services.agent.core.llm_service import LLMService
+            llm = LLMService()
+            canonical_types: List[str] = []
+            if candidate_types:
+                # Raise if LLM unavailable as per instruction (no fallbacks)
+                canonical_types = await fc.canonicalize_resource_types_via_llm(candidate_types, llm_service=llm)
 
-            # 3) time from extracted time_indicators
-            time_indicator = None
-            for ti in (extracted.get("time_indicators") or []):
-                t = str(ti).lower().strip()
-                if t:
-                    time_indicator = t
-                    break
-            if time_indicator:
-                start_ts = self._time_indicator_to_start(time_indicator)
-                if start_ts:
-                    filter_lines.append(f"timestamp>\"{start_ts}\"")
-                    components["time"] = {"indicator": time_indicator, "from": start_ts}
+            # Optional service name hints (type,name) derived from architecture context
+            service_name_hints: List[tuple] = []
+            arch = state.get("architecture_context") or {}
+            for svc in arch.get("parsed_services", []) or []:
+                if isinstance(svc, dict):
+                    st = svc.get("type") or svc.get("name")
+                    nm = svc.get("service_name") or svc.get("name")
+                    if st and nm:
+                        service_name_hints.append((st, nm))
+            rt_clauses, rt_info = fc.build_resource_type_clauses(
+                resource_types=canonical_types,
+                service_names=service_name_hints,
+            )
+            if rt_clauses:
+                filter_lines.extend(rt_clauses)
+            components["resource_types"] = rt_info.get("resource_types", [])
+            if rt_info.get("labels"):
+                components.setdefault("context_labels", [])
+                components["context_labels"].extend(rt_info["labels"]) 
 
-            # 4) extras: error patterns / keywords as text search (simple contains)
-            # Use unified full-text search to avoid invalid nested field matches.
+            # 2) severity and http status (JJJ)
+            sev_input: List[str] = list(extracted.get("severities") or [])
+            if sev_input:
+                sev_clause, sev_info = fc.build_severity_clause(sev_input)
+                if sev_clause:
+                    filter_lines.extend(sev_clause)
+                    components["severity"] = {"threshold": sev_info.get("selected"), "provided": sev_info.get("provided")}
+            http_input: List[str] = list(extracted.get("http_status_codes") or [])
+            if http_input:
+                http_clauses, http_info = fc.build_http_status_clauses(http_input)
+                if http_clauses:
+                    # Multiple status clauses should be OR-ed, not AND-ed
+                    grouped = fc.or_group(http_clauses)
+                    filter_lines.extend(grouped)
+                    components.setdefault("http_status", [])
+                    components["http_status"] = http_info.get("accepted", [])
+
+            # 3) time from extracted time_indicators (III)
+            time_inds = [str(t).strip() for t in (extracted.get("time_indicators") or []) if str(t).strip()]
+            if time_inds:
+                try:
+                    t_clauses, t_info = fc.build_temporal_clauses_from_indicators(time_inds)
+                    filter_lines.extend(t_clauses)
+                    components["time"] = {"indicator": t_info.get("indicator"), "from": t_info.get("start_time")}
+                except Exception as te:
+                    # Strict behavior: if indicators are unsupported, surface an error
+                    raise te
+
+            # 4) extras: error patterns / keywords as text search (KKK)
+            # Use global full-text search (quoted phrases) with a small cap
             keywords = (extracted.get("keywords") or []) + (extracted.get("error_patterns") or [])
             keywords = [k for k in keywords if isinstance(k, str) and k.strip()]
-            # Only add a couple to avoid overconstraining
-            for k in keywords[:3]:
-                filter_lines.append(f"{self._simple_contains(k)}")
-                components["extras"].append({"contains": k})
+            if keywords:
+                contains_clauses, contains_info = fc.build_content_contains_clauses(keywords, max_items=3)
+                if contains_clauses:
+                    # Content matches should be OR-ed to avoid over-constraining
+                    grouped = fc.or_group(contains_clauses)
+                    filter_lines.extend(grouped)
+                    components.setdefault("extras", [])
+                    for k in contains_info.get("accepted", []):
+                        components["extras"].append({"contains": k})
 
             # Join lines (newline-separated for readability)
             filter_str = "\n".join(filter_lines)
@@ -129,21 +155,7 @@ class DirectFilterConstructionNode:
             })
             return updated
 
-    def _time_indicator_to_start(self, indicator: str) -> Optional[str]:
-        now = datetime.utcnow()
-        if indicator in ("last_hour", "recent"):
-            start = now - timedelta(hours=1)
-        elif indicator in ("last_day", "24h"):
-            start = now - timedelta(days=1)
-        elif indicator in ("last_7_days", "7d"):
-            start = now - timedelta(days=7)
-        else:
-            return None
-        return start.isoformat() + "Z"
-
     def _simple_contains(self, keyword: str) -> str:
-        # Escaping quotes inside keyword for safety
+        # Deprecated in favor of filter_components.build_content_contains_clauses
         k = keyword.replace('"', '\\"')
-        # Use two common payload fields for a basic text match
-        # Use global full-text search (quoted phrase) across payloads and fields
         return f'"{k}"'

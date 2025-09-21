@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { MessageAnalysis } from "./MessageAnalysis";
 import { Brain, FileText, Boxes, CheckCircle2, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -40,6 +40,24 @@ export const AIMessage: React.FC<AIMessageProps> = ({
       return ta.localeCompare(tb);
     });
   }, [events]);
+
+  type EventItem = NonNullable<AIMessageProps["events"]>[number];
+
+  const buildEventKey = (ev: EventItem, index: number) => {
+    const base = `${ev.node || "node"}-${ev.timestamp || ""}`;
+    return `${base}-${index}`;
+  };
+
+  const [activeEventKey, setActiveEventKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!orderedEvents.length) {
+      setActiveEventKey(null);
+      return;
+    }
+    const firstKey = buildEventKey(orderedEvents[orderedEvents.length - 1], orderedEvents.length - 1);
+    setActiveEventKey(firstKey);
+  }, [orderedEvents]);
   const ExpandableValue: React.FC<{ value: any; maxChars?: number }> = ({ value, maxChars = 120 }) => {
     const [expanded, setExpanded] = useState(false);
     const isString = typeof value === "string";
@@ -103,47 +121,162 @@ export const AIMessage: React.FC<AIMessageProps> = ({
         return { icon: <Boxes className="w-4 h-4" />, chip: "bg-purple-500/10 text-purple-300 border-purple-600/40" };
       case "intent_and_query_analysis":
         return { icon: <Brain className="w-4 h-4" />, chip: "bg-emerald-500/10 text-emerald-300 border-emerald-600/40" };
+      case "direct_filter":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-cyan-500/10 text-cyan-300 border-cyan-600/40" };
+      case "single_stage_filter":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-teal-500/10 text-teal-300 border-teal-600/40" };
+      case "context_aware_filter":
+        return { icon: <Boxes className="w-4 h-4" />, chip: "bg-indigo-500/10 text-indigo-300 border-indigo-600/40" };
+      case "filter_optimization":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-amber-500/10 text-amber-300 border-amber-600/40" };
+      case "primary_call_prep":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-sky-500/10 text-sky-300 border-sky-600/40" };
+      case "execute_logging_api":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-rose-500/10 text-rose-300 border-rose-600/40" };
+      case "response_analysis":
+        return { icon: <Brain className="w-4 h-4" />, chip: "bg-emerald-500/10 text-emerald-300 border-emerald-600/40" };
+      case "multi_dimensional_analysis":
+        return { icon: <Brain className="w-4 h-4" />, chip: "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-600/40" };
+      case "auto_refine_filters":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-lime-500/10 text-lime-300 border-lime-600/40" };
+      case "broaden_search":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-yellow-500/10 text-yellow-300 border-yellow-600/40" };
+      case "arch_resource_discovery":
+        return { icon: <Boxes className="w-4 h-4" />, chip: "bg-pink-500/10 text-pink-300 border-pink-600/40" };
+      case "upstream_downstream_check":
+        return { icon: <Boxes className="w-4 h-4" />, chip: "bg-orange-500/10 text-orange-300 border-orange-600/40" };
+      case "present_results":
+        return { icon: <FileText className="w-4 h-4" />, chip: "bg-green-500/10 text-green-300 border-green-600/40" };
+      case "session_complete":
+        return { icon: <CheckCircle2 className="w-4 h-4" />, chip: "bg-green-600/10 text-green-300 border-green-700/40" };
       default:
         return { icon: <FileText className="w-4 h-4" />, chip: "bg-slate-500/10 text-slate-300 border-slate-600/40" };
     }
   };
 
-  const NodeProgress: React.FC<{ items: NonNullable<AIMessageProps["events"]> }>= ({ items }) => {
+  const NodeProgress: React.FC<{
+    items: NonNullable<AIMessageProps["events"]>;
+    activeKey: string | null;
+    onSelect: (key: string) => void;
+  }> = ({ items, activeKey, onSelect }) => {
     if (!items || items.length === 0) return null;
     return (
       <div className="px-5 pt-5 pb-4 border-b border-slate-800/60">
-        <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">Progress</div>
-        <div className="relative overflow-x-auto">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-[11px] uppercase tracking-wide text-slate-400">Investigation Flow</div>
+          {activeKey && <div className="text-[11px] text-slate-500">Tap a node to inspect captured state</div>}
+        </div>
+        <div className="relative overflow-x-auto pb-1">
           <div className="pointer-events-none absolute left-0 top-0 h-full w-6 bg-gradient-to-r from-slate-900/70 to-transparent" />
           <div className="pointer-events-none absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-slate-900/70 to-transparent" />
-          <div className="flex items-stretch gap-4 min-w-max pr-2 snap-x snap-mandatory">
+          <div className="flex items-stretch gap-4 min-w-max pr-3 snap-x snap-mandatory">
             {items.map((ev, idx) => {
+              const key = buildEventKey(ev, idx);
+              const isActive = key === activeKey;
               const done = (ev.status || "").toLowerCase() === "completed";
               const meta = getMeta(ev.node);
+              const startedAt = ev.startedAt ? new Date(ev.startedAt) : null;
+              const completedAt = ev.completedAt ? new Date(ev.completedAt) : null;
+              const durationMs = startedAt && completedAt ? completedAt.getTime() - startedAt.getTime() : null;
+              const durationText = durationMs !== null ? `${(durationMs / 1000).toFixed(2)}s` : null;
+
+              const summary = () => {
+                const d: any = ev.data || {};
+                switch (ev.node) {
+                  case "response_analysis": {
+                    const q = d.result_quality || d.quality;
+                    const total = d.result_stats?.total ?? d.total;
+                    return `Quality ${q ?? "—"}${typeof total === "number" ? ` · Total ${total}` : ""}`;
+                  }
+                  case "auto_refine_filters":
+                    return `Refinements ${d.iterations ?? d.count ?? "—"}`;
+                  case "broaden_search":
+                    return `Broadenings ${d.iterations ?? d.count ?? "—"}`;
+                  case "arch_resource_discovery":
+                    return `Discovered ${d.discovered ?? "—"}`;
+                  case "multi_dimensional_analysis":
+                    if (d?.summary) {
+                      const t = d.summary.total;
+                      const er = d.summary.error_rate;
+                      return `Analyzed ${t ?? "—"}${typeof er === "number" ? ` · Error ${er}%` : ""}`;
+                    }
+                    return "";
+                  case "execute_logging_api":
+                    return `${typeof d.returned === "number" ? `Returned ${d.returned}` : ""}${typeof d.page_count === "number" ? ` · Pages ${d.page_count}` : ""}`.trim();
+                  default:
+                    return "";
+                }
+              };
+
               return (
-                <div key={`${ev.node}-${idx}`} className="flex items-center gap-4 snap-start">
-                  <div className="flex flex-col items-center min-w-[140px]">
-                    <div className={`w-full glass-card hover-card gradient-border rounded-xl px-3 py-2 ${done ? "border-emerald-500/40" : "border-blue-500/30"}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-slate-200 text-xs font-medium">
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-slate-800/60 border border-slate-700/60">
-                            {meta.icon}
-                          </span>
-                          <span className="truncate max-w-[9rem]" title={ev.title}>{ev.title}</span>
-                        </div>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${done ? "bg-emerald-500/10 text-emerald-300 border-emerald-600/40" : "bg-blue-500/10 text-blue-300 border-blue-600/40"}`}>
-                          {done ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
-                          {ev.status}
+                <div
+                  key={key}
+                  onClick={() => onSelect(key)}
+                  className={`relative snap-start shrink-0 transition-all duration-400 cursor-pointer ${
+                    isActive ? "w-[320px] lg:w-[360px]" : "w-[220px] lg:w-[240px]"
+                  }`}
+                >
+                  <div
+                    className={`h-full rounded-2xl border bg-slate-900/55 backdrop-blur-md px-4 py-3 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_20px_45px_rgba(56,189,248,0.15)] overflow-hidden ${
+                      isActive
+                        ? "border-sky-500/40 ring-2 ring-sky-500/20"
+                        : done
+                        ? "border-emerald-500/30"
+                        : "border-slate-800/60"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 gap-y-2 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-800/60 border border-slate-700/60 text-slate-200">
+                          {meta.icon}
                         </span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-slate-200 leading-tight" title={ev.title}>
+                            {ev.title}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-1">
+                            {summary() || ev.node || "Node"}
+                          </div>
+                        </div>
                       </div>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full border inline-flex items-center gap-1 flex-shrink-0 self-start ${
+                          done
+                            ? "bg-emerald-500/10 text-emerald-300 border-emerald-600/40"
+                            : "bg-blue-500/10 text-blue-300 border-blue-600/40"
+                        }`}
+                      >
+                        {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        {ev.status}
+                      </span>
                     </div>
-                    {ev.startedAt && ev.completedAt && (
-                      <div className="mt-1 text-[10px] text-slate-500">{((new Date(ev.completedAt).getTime()-new Date(ev.startedAt).getTime())/1000).toFixed(2)}s</div>
+
+                    {durationText && (
+                      <div className="mt-2 text-[10px] text-slate-500 uppercase tracking-[0.2em]">
+                        Duration {durationText}
+                      </div>
+                    )}
+
+                    {isActive && (
+                      <div className="mt-3 space-y-3 text-left animate-slide-up">
+                        {ev.state && (
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">State Snapshot</div>
+                            <ExpandableValue value={(ev as any).state ?? ev} maxChars={200} />
+                          </div>
+                        )}
+                        {ev.data && (
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">Event Data</div>
+                            <ExpandableValue value={ev.data} maxChars={200} />
+                          </div>
+                        )}
+                        {(!ev.state && !ev.data) && (
+                          <div className="text-[12px] text-slate-400/80">No structured payload captured for this node.</div>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {idx < items.length - 1 && (
-                    <div className={`h-px w-10 self-center ${items[idx+1]?.status?.toLowerCase() === 'completed' ? 'bg-emerald-600/50' : 'bg-slate-700/60'}`}></div>
-                  )}
                 </div>
               );
             })}
@@ -159,63 +292,12 @@ export const AIMessage: React.FC<AIMessageProps> = ({
       <div className="glass-card gradient-border hover-card rounded-2xl overflow-hidden max-w-full">
         {/* Horizontal progress */}
         {orderedEvents && orderedEvents.length > 0 && (
-          <NodeProgress items={orderedEvents as NonNullable<AIMessageProps["events"]>} />
+          <NodeProgress
+            items={orderedEvents as NonNullable<AIMessageProps["events"]>}
+            activeKey={activeEventKey}
+            onSelect={(key) => setActiveEventKey(key)}
+          />
         )}
-        {/* Collapsible node details */}
-        {orderedEvents && orderedEvents.length > 0 && (
-          <div className="px-5 pt-3 pb-3 space-y-2 border-b border-slate-800/60">
-            {orderedEvents.map((ev, idx) => {
-              const meta = getMeta(ev.node);
-              const StatusIcon = (ev.status === "completed" ? CheckCircle2 : Loader2) as any;
-              const startedAt = ev.startedAt ? new Date(ev.startedAt) : null;
-              const completedAt = ev.completedAt ? new Date(ev.completedAt) : null;
-              const durationMs = startedAt && completedAt ? (completedAt.getTime() - startedAt.getTime()) : null;
-              const humanDuration = durationMs !== null ? `${(durationMs / 1000).toFixed(2)}s` : null;
-              return (
-                <details key={`${ev.node}-${idx}`} className="group border border-slate-800/60 rounded-xl overflow-hidden">
-                  <summary className="list-none flex items-center justify-between px-3 py-2 bg-slate-900/50 hover:bg-slate-900/60 cursor-pointer select-none">
-                    <div className="flex items-center gap-2 text-slate-200 text-sm font-medium">
-                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-800/60 border border-slate-700/60">
-                        {meta.icon}
-                      </span>
-                      <span>{ev.title}</span>
-                    </div>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${meta.chip}`}>
-                      <StatusIcon className={`w-3.5 h-3.5 ${ev.status === 'completed' ? '' : 'animate-pulse'}`} />
-                      {ev.status}
-                    </span>
-                  </summary>
-                  <div className="px-3 py-3 bg-slate-950/40 space-y-2">
-                    {(startedAt || completedAt) && (
-                      <div className="mb-2 text-[11px] text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
-                        {startedAt && (
-                          <span>Started: {startedAt.toLocaleTimeString()}</span>
-                        )}
-                        {completedAt && (
-                          <span>Completed: {completedAt.toLocaleTimeString()}</span>
-                        )}
-                        {humanDuration && (
-                          <span>Duration: {humanDuration}</span>
-                        )}
-                      </div>
-                    )}
-                    <div className="bg-slate-950/40 border border-slate-800/60 rounded-lg p-2">
-                      <div className="text-slate-400 text-[10px] uppercase tracking-wide mb-1">State Snapshot</div>
-                      <ExpandableValue value={(ev as any).state ?? ev} maxChars={180} />
-                    </div>
-                    {ev.data && (
-                      <div className="bg-slate-950/40 border border-slate-800/60 rounded-lg p-2">
-                        <div className="text-slate-400 text-[10px] uppercase tracking-wide mb-1">Event Data</div>
-                        <ExpandableValue value={ev.data} maxChars={180} />
-                      </div>
-                    )}
-                  </div>
-                </details>
-              );
-            })}
-          </div>
-        )}
-
         {/* Final analysis comes after stages */}
         <div className="p-5 text-[13px]">
           <MessageAnalysis
