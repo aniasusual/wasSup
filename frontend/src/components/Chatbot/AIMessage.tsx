@@ -18,8 +18,27 @@ interface AIMessageProps {
     startedAt?: string;
     completedAt?: string;
   }>;
+  resumeInfo?: {
+    mode?: string;
+    message?: string;
+  };
   onOpenLogsTab?: (args: { entries: any[]; title?: string }) => void;
 }
+
+const resolveActionLabel = (action: any, index: number) => {
+  if (!action) {
+    return `Action ${index + 1}`;
+  }
+
+  return (
+    action.label ||
+    action.title ||
+    action.name ||
+    action.summary ||
+    action.description ||
+    `Action ${index + 1}`
+  );
+};
 
 export const AIMessage: React.FC<AIMessageProps> = ({
   text,
@@ -29,8 +48,52 @@ export const AIMessage: React.FC<AIMessageProps> = ({
   isStreaming = false,
   isExpanded = false,
   events = [],
+  resumeInfo,
   onOpenLogsTab,
 }) => {
+  const clarifyingQuestions = completeResult?.clarifying_questions ?? completeResult?.clarifyingQuestions;
+  const missingInfo = completeResult?.missing_info ?? completeResult?.missingInfo;
+  const toolResults = completeResult?.tool_results ?? completeResult?.toolResults;
+
+  const normalizedActions = Array.isArray(actions) ? actions.filter(Boolean) : [];
+
+  const relevantLogs = Array.isArray(completeResult?.relevant_logs)
+    ? completeResult?.relevant_logs ?? []
+    : Array.isArray(completeResult?.relevantLogs)
+    ? completeResult?.relevantLogs ?? []
+    : [];
+
+  const hasLogs = relevantLogs.length > 0;
+
+  const formatResumeMode = (mode?: string) => {
+    if (!mode) {
+      return undefined;
+    }
+    return mode
+      .split(/[_\s]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  };
+
+  const effectiveResumeInfo = useMemo(() => {
+    const mode = resumeInfo?.mode ?? completeResult?.resume_mode;
+    const message = resumeInfo?.message ??
+      (completeResult?.resumed_from_wait
+        ? "Investigation resumed after pending clarification."
+        : undefined);
+
+    if (!mode && !message) {
+      return undefined;
+    }
+    return {
+      mode,
+      message,
+    };
+  }, [resumeInfo, completeResult]);
+
+  const formattedResumeMode = formatResumeMode(effectiveResumeInfo?.mode);
+
   // Order events for stable visual progress
   const orderedEvents = useMemo(() => {
     const arr = Array.isArray(events) ? [...events] : [];
@@ -298,25 +361,46 @@ export const AIMessage: React.FC<AIMessageProps> = ({
             onSelect={(key) => setActiveEventKey(key)}
           />
         )}
+        {effectiveResumeInfo?.message && (
+          <div className="px-5 pt-4">
+            <div className="flex items-start gap-3 rounded-xl border border-sky-500/35 bg-sky-500/10 px-4 py-3 text-sky-100 shadow-inner">
+              <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-sky-400/60 bg-sky-500/20">
+                {isStreaming ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                )}
+              </span>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.25em] text-sky-200/80">
+                  {formattedResumeMode || "Resumed"}
+                </div>
+                <div className="text-[13px] leading-5">
+                  {effectiveResumeInfo.message}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Final analysis comes after stages */}
         <div className="p-5 text-[13px]">
           <MessageAnalysis
             analysis={text}
             metadata={completeResult?.metadata}
             needsClarification={needsClarification}
-            clarifyingQuestions={completeResult?.clarifying_questions}
-            missingInfo={completeResult?.missing_info}
-            toolResults={completeResult?.tool_results}
+            clarifyingQuestions={clarifyingQuestions}
+            missingInfo={missingInfo}
+            toolResults={toolResults}
             isStreaming={isStreaming}
             completeResult={completeResult}
           />
-          {!!(completeResult?.relevant_logs?.length) && (
+          {hasLogs && (
             <div className="mt-3">
               <button
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-blue-700/60 bg-blue-900/30 text-blue-300 hover:bg-blue-900/50 transition-colors text-[12px]"
                 onClick={() => onOpenLogsTab && onOpenLogsTab({
-                  entries: completeResult.relevant_logs,
-                  title: `AI Results (${completeResult.relevant_logs.length})`
+                  entries: relevantLogs,
+                  title: `AI Results (${relevantLogs.length})`
                 })}
                 title="Open these entries in a logs tab"
               >
@@ -327,15 +411,15 @@ export const AIMessage: React.FC<AIMessageProps> = ({
         </div>
 
         {/* Relevant Logs (from Execute Logging API) */}
-        {!!(completeResult?.relevant_logs?.length) && (
+        {hasLogs && (
           <div className="px-5 pb-5">
             <div className="mb-2 flex items-center justify-between">
-              <div className="text-[12px] text-slate-400">Logs returned: {completeResult.relevant_logs.length}</div>
+              <div className="text-[12px] text-slate-400">Logs returned: {relevantLogs.length}</div>
               <button
                 className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border border-blue-700/60 bg-blue-900/30 text-blue-300 hover:bg-blue-900/50 transition-colors text-[12px]"
                 onClick={() => onOpenLogsTab && onOpenLogsTab({
-                  entries: completeResult.relevant_logs,
-                  title: `AI Results (${completeResult.relevant_logs.length})`
+                  entries: relevantLogs,
+                  title: `AI Results (${relevantLogs.length})`
                 })}
                 title="Open these entries in a logs tab"
               >
@@ -343,7 +427,7 @@ export const AIMessage: React.FC<AIMessageProps> = ({
               </button>
             </div>
             <div className="space-y-2">
-              {completeResult.relevant_logs.slice(0, 20).map((log: any, idx: number) => {
+              {relevantLogs.slice(0, 20).map((log: any, idx: number) => {
                 const severity = String(log?.severity || 'DEFAULT');
                 const ts = log?.timestamp ? new Date(log.timestamp).toLocaleString() : '';
                 const preview = (log?.message || '').toString();
@@ -429,17 +513,17 @@ export const AIMessage: React.FC<AIMessageProps> = ({
         )}
 
         {/* Actions - compact chips, no heading */}
-        {actions && actions.length > 0 && (
+        {normalizedActions.length > 0 && (
           <div className="px-5 pb-5">
             <div className="flex flex-wrap gap-2">
-              {actions.map((action, index) => (
+              {normalizedActions.map((action, index) => (
                 <button
                   key={index}
                   className="px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/60 text-slate-200 text-xs rounded-md border border-slate-700/60 transition-colors"
                   onClick={() => {
                   }}
                 >
-                  {action.label}
+                  {resolveActionLabel(action, index)}
                 </button>
               ))}
             </div>

@@ -338,7 +338,7 @@ class GCPLoggingClient:
 
         next_page_token = page_token if (max_pages or max_entries) else None
 
-        print(f"Entries: {entries} lodae")
+        # print(f"Entries: {entries} lodae")
         # print(f"Page count: {page_count}")
         # print(f"Returned: {len(entries[:max_entries] if max_entries else entries)}")
         # print(f"Next page token: {next_page_token}")

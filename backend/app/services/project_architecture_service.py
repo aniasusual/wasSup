@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from bson import ObjectId
 from app.models.project_architecture import (
@@ -354,7 +354,66 @@ class ProjectArchitectureService:
         except Exception as e:
             logger.error(f"Error getting failure patterns for {project_id}: {e}")
             raise
-    
+
+    # ----------------------------
+    # Phase 10: Context Management Bundle
+    # ----------------------------
+    async def get_context_management_snapshot(self, project_id: str) -> Dict[str, Any]:
+        """Retrieve context-management related sections for a project."""
+        try:
+            collection = await self.get_collection()
+            projection = {
+                "context_memory": 1,
+                "query_history": 1,
+                "query_history_stats": 1,
+                "user_preferences": 1,
+                "session_state": 1,
+                "learning_repository": 1,
+                "learning_repository_summary": 1,
+                "team_knowledge": 1,
+                "team_knowledge_stats": 1,
+                "architecture_learning": 1,
+                "architecture_learning_meta": 1,
+                "preventive_actions": 1,
+                "proactive_monitoring_plan": 1,
+                "user_feedback_history": 1,
+                "architecture_agent_summary": 1,
+                "query_classifier_summary": 1,
+                "investigation_planner_summary": 1,
+                "filter_architect_summary": 1,
+                "api_orchestrator_stats": 1,
+                "correlation_engine_summary": 1,
+                "pattern_analyzer_summary": 1,
+                "synthesis_summary": 1,
+                "recommendation_summary": 1,
+                "context_manager_snapshot": 1,
+                "real_time_stream_summary": 1,
+                "predictive_analytics_summary": 1,
+                "ml_pattern_summary": 1,
+                "cross_project_learning_summary": 1,
+                "automated_remediation_summary": 1,
+                "performance_optimization_summary": 1,
+                "_id": 0,
+            }
+            doc = await collection.find_one({"project_id": project_id}, projection)
+            return doc or {}
+        except Exception as e:
+            logger.error(f"Error getting context management snapshot for {project_id}: {e}")
+            raise
+
+    async def update_context_management_snapshot(self, project_id: str, updates: Dict[str, Any]) -> bool:
+        """Persist context-management structures for a project."""
+        if not updates:
+            return True
+        try:
+            collection = await self.get_collection()
+            payload = {**updates, "context_updated_at": datetime.utcnow()}
+            res = await collection.update_one({"project_id": project_id}, {"$set": payload})
+            return res.matched_count > 0
+        except Exception as e:
+            logger.error(f"Error updating context management snapshot for {project_id}: {e}")
+            raise
+
     async def list_architectures(self, skip: int = 0, limit: int = 100) -> List[ProjectArchitecture]:
         """List all project architectures"""
         try:

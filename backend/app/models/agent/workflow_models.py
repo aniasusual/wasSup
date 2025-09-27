@@ -5,7 +5,7 @@ This module defines the core state management and workflow models
 for the intelligent GCP log investigation agent.
 """
 
-from typing import Dict, List, Optional, Any, TypedDict, Literal
+from typing import Dict, List, Optional, Any, TypedDict, Literal, NotRequired, Required
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -70,7 +70,7 @@ class InvestigationContext(BaseModel):
         }
 
 
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     """
     Core state object for the LangGraph agent workflow.
     
@@ -78,52 +78,96 @@ class AgentState(TypedDict):
     all nodes in the agent workflow graph.
     """
     # User inputs
-    question: str
-    project_id: str
-    session_id: Optional[str]
-    user_id: Optional[str]
-    services: Optional[List[str]]
-    time_range: Optional[Dict[str, str]]
-    collection: Optional[str]
-    limit: int
-    access_token: Optional[str]
+    question: Required[str]
+    project_id: Required[str]
+    session_id: NotRequired[Optional[str]]
+    user_id: NotRequired[Optional[str]]
+    services: NotRequired[Optional[List[str]]]
+    time_range: NotRequired[Optional[Dict[str, str]]]
+    collection: NotRequired[Optional[str]]
+    limit: Required[int]
+    access_token: NotRequired[Optional[str]]
     
     # Agent workflow state
-    current_step: str
-    needs_clarification: bool
-    missing_info: List[str]
-    investigation_context: InvestigationContext
+    current_step: Required[str]
+    needs_clarification: Required[bool]
+    missing_info: Required[List[str]]
+    investigation_context: Required[InvestigationContext]
     
     # Results and outputs
-    analysis: str
-    tool_results: Optional[Dict[str, Any]]
-    actions: List[Dict[str, Any]]
-    relevant_logs: List[Dict[str, Any]]
-    clarifying_questions: List[Dict[str, str]]
+    analysis: Required[str]
+    tool_results: NotRequired[Optional[Dict[str, Any]]]
+    actions: Required[List[Dict[str, Any]]]
+    relevant_logs: Required[List[Dict[str, Any]]]
+    clarifying_questions: Required[List[Dict[str, str]]]
+    clarification_responses: NotRequired[List[Dict[str, Any]]]
     
     # Conversation management
-    conversation_history: List[Dict[str, Any]]
-    context_summary: str
-    error: Optional[str]
+    conversation_history: Required[List[Dict[str, Any]]]
+    context_summary: Required[str]
+    error: NotRequired[Optional[str]]
     
     # Query processing state
-    query_type: Optional[Literal["simple", "complex", "ambiguous"]]
-    extracted_entities: Dict[str, Any]
-    processed_question: str
+    query_type: NotRequired[Optional[Literal["simple", "complex", "ambiguous"]]]
+    extracted_entities: Required[Dict[str, Any]]
+    processed_question: Required[str]
     
     # API interaction state
-    api_calls_made: int
-    last_api_call_time: Optional[datetime]
-    rate_limit_info: Optional[Dict[str, Any]]
+    api_calls_made: Required[int]
+    last_api_call_time: NotRequired[Optional[datetime]]
+    rate_limit_info: NotRequired[Optional[Dict[str, Any]]]
     
     # Learning and memory
-    discovered_patterns: List[Dict[str, Any]]
-    user_preferences: Dict[str, Any]
-    architecture_insights: Dict[str, Any]
+    discovered_patterns: Required[List[Dict[str, Any]]]
+    user_preferences: NotRequired[Dict[str, Any]]
+    architecture_insights: Required[Dict[str, Any]]
     
     # Architecture context (added for A1 node)
-    architecture_context: Optional[Dict[str, Any]]
-    relevant_services: Optional[List[str]]
+    architecture_context: NotRequired[Optional[Dict[str, Any]]]
+    relevant_services: NotRequired[Optional[List[str]]]
+
+    # Phase 10 context management additions
+    context_memory: NotRequired[Dict[str, Any]]
+    context_memory_entry: NotRequired[Dict[str, Any]]
+    context_memory_entry_id: NotRequired[str]
+    query_history: NotRequired[List[Dict[str, Any]]]
+    query_history_stats: NotRequired[Dict[str, Any]]
+    query_history_entry: NotRequired[Dict[str, Any]]
+    user_preferences_summary: NotRequired[Dict[str, Any]]
+    session_state: NotRequired[Dict[str, Any]]
+    session_state_snapshot: NotRequired[Dict[str, Any]]
+    learning_repository: NotRequired[List[Dict[str, Any]]]
+    learning_repository_summary: NotRequired[Dict[str, Any]]
+    team_knowledge: NotRequired[List[Dict[str, Any]]]
+    team_knowledge_stats: NotRequired[Dict[str, Any]]
+    architecture_learning: NotRequired[List[Dict[str, Any]]]
+    architecture_learning_meta: NotRequired[Dict[str, Any]]
+    investigation_confidence: NotRequired[Dict[str, Any]]
+    result_quality: NotRequired[str]
+    user_feedback: NotRequired[Dict[str, Any]]
+    user_satisfaction: NotRequired[str]
+    satisfaction_route: NotRequired[str]
+    drill_down_requested: NotRequired[bool]
+    alternative_path_requested: NotRequired[bool]
+    preventive_actions: NotRequired[List[Dict[str, Any]]]
+    proactive_monitoring_plan: NotRequired[Dict[str, Any]]
+    user_feedback_history: NotRequired[List[Dict[str, Any]]]
+    architecture_agent_summary: NotRequired[Dict[str, Any]]
+    query_classifier_summary: NotRequired[Dict[str, Any]]
+    investigation_planner_summary: NotRequired[Dict[str, Any]]
+    filter_architect_summary: NotRequired[Dict[str, Any]]
+    api_orchestrator_stats: NotRequired[Dict[str, Any]]
+    correlation_engine_summary: NotRequired[Dict[str, Any]]
+    pattern_analyzer_summary: NotRequired[Dict[str, Any]]
+    synthesis_summary: NotRequired[Dict[str, Any]]
+    recommendation_summary: NotRequired[Dict[str, Any]]
+    context_manager_snapshot: NotRequired[Dict[str, Any]]
+    real_time_stream_summary: NotRequired[Dict[str, Any]]
+    predictive_analytics_summary: NotRequired[Dict[str, Any]]
+    ml_pattern_summary: NotRequired[Dict[str, Any]]
+    cross_project_learning_summary: NotRequired[Dict[str, Any]]
+    automated_remediation_summary: NotRequired[Dict[str, Any]]
+    performance_optimization_summary: NotRequired[Dict[str, Any]]
 
 
 class NodeResult(BaseModel):
