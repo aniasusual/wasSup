@@ -9,10 +9,9 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, Body
+from fastapi import APIRouter, HTTPException, Depends, Body, Request
 from fastapi.responses import StreamingResponse
 
-from ...models.agent import WorkflowConfig
 from ...services.agent.core import GCPLogInvestigationAgent
 from ..helpers.authHelper import get_current_user, ensure_fresh_access_token
 
@@ -20,85 +19,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agent"])
 
-# Global agent instance (in production, this should be properly managed)
-_agent_instance: Optional[GCPLogInvestigationAgent] = None
 
+def get_agent(request: Request) -> GCPLogInvestigationAgent:
+    """Retrieve the managed agent instance from application state."""
+    agent = getattr(request.app.state, "agent", None)
+    if agent is None:
+        logger.error("Agent instance requested before startup initialization")
+        raise HTTPException(status_code=503, detail="Agent service unavailable")
 
-def get_agent() -> GCPLogInvestigationAgent:
-    """
-    Get or create the agent instance.
-    
-    Returns:
-        GCPLogInvestigationAgent instance
-    """
-    global _agent_instance
-    if _agent_instance is None:
-        config = WorkflowConfig(
-            max_api_calls_per_session=50,
-            max_investigation_time_minutes=30,
-            confidence_threshold=0.7,
-            enable_streaming=True,
-            enable_learning=True,
-            debug_mode=True  # Enable debug mode for development
-        )
-        _agent_instance = GCPLogInvestigationAgent(config)
-        logger.info("Agent instance created")
-    
-    return _agent_instance
-
-
-@router.post("/agent/query")
-async def process_agent_query(
-    query: Dict[str, Any] = Body(...),
-    current_user: str = Depends(get_current_user)
-):
-    """
-    Process a user query through the intelligent agent workflow.
-    
-    This endpoint handles the complete investigation workflow from user input
-    to final analysis results using the LangGraph-based agent system.
-    
-    Args:
-        query: Query input containing question, project_id, and optional parameters
-        current_user: Authenticated user identifier
-        
-    Returns:
-        Complete analysis results with investigation insights
-    """
-    try:
-        # Get a fresh Google access token
-        fresh_access_token = await ensure_fresh_access_token(current_user)
-        # Add authentication information to query
-        query_with_auth = query.copy()
-        query_with_auth["access_token"] = fresh_access_token
-        query_with_auth["user_id"] = current_user
-        
-        # Generate session ID if not provided
-        session_id = query.get("session_id") or query.get("sessionId")  # Support both formats
-        if not session_id:
-            session_id = f"session_{current_user}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-        
-        # Get agent instance and process query
-        agent = get_agent()
-        result = await agent.process_query(query_with_auth, session_id)
-        
-        # Add session ID to result
-        result["session_id"] = session_id
-        
-        logger.info(f"Query processed successfully for user {current_user}, session {session_id}")
-        return result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error processing agent query: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
+    return agent
 
 
 @router.post("/agent/query/stream")
 async def process_agent_query_stream(
     query: Dict[str, Any] = Body(...),
-    current_user: str = Depends(get_current_user)
+    current_user: str = Depends(get_current_user),
+    agent: GCPLogInvestigationAgent = Depends(get_agent),
 ):
     """
     Process a user query with real-time streaming responses.
@@ -134,8 +70,6 @@ async def process_agent_query_stream(
                 session_id = f"session_{current_user}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
             
             # Get agent instance and process query with streaming
-            agent = get_agent()
-
             # Process query with streaming
             async for chunk in agent.process_query_stream(query_with_auth, session_id):
                 ctype = chunk.get("type")
@@ -154,6 +88,8 @@ async def process_agent_query_stream(
                         "timestamp": chunk.get("timestamp"),
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
+                elif ctype == "status":
+                    yield f"data: {_create_sse_data('status', chunk.get('message', ''), data=chunk.get('data'))}\n\n"
                 elif ctype == "result":
                     # Send final result
                     yield f"data: {_create_sse_data('result', chunk.get('data', {}), 'result')}\n\n"
@@ -255,7 +191,9 @@ async def delete_session(
 
 
 @router.get("/agent/health")
-async def agent_health_check():
+async def agent_health_check(
+    agent: GCPLogInvestigationAgent = Depends(get_agent),
+):
     """
     Health check endpoint for the agent system.
     
@@ -263,8 +201,6 @@ async def agent_health_check():
         Agent system health status
     """
     try:
-        agent = get_agent()
-        
         return {
             "status": "healthy",
             "agent_initialized": agent is not None,

@@ -25,12 +25,16 @@ type Message = {
   events?: Array<{
     node: string;
     title: string;
-    status: string; // started | completed
+    status: string; // started | completed | error
     data: any;
     timestamp: string;
     startedAt?: string;
     completedAt?: string;
   }>;
+  resumeInfo?: {
+    mode?: string;
+    message?: string;
+  };
 };
 
 type Session = {
@@ -40,6 +44,54 @@ type Session = {
   last_updated: string;
   message_count: number;
   context_summary: string;
+};
+
+const normalizeResultPayload = (payload: any) => {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const normalized = { ...payload };
+  const pick = (...keys: string[]) => {
+    for (const key of keys) {
+      if (normalized[key] !== undefined) {
+        return normalized[key];
+      }
+    }
+    return undefined;
+  };
+
+  const needsClarification = pick("needs_clarification", "needsClarification");
+  if (needsClarification !== undefined) {
+    normalized.needs_clarification = needsClarification;
+  }
+
+  const clarifyingQuestions = pick("clarifying_questions", "clarifyingQuestions");
+  if (clarifyingQuestions !== undefined) {
+    normalized.clarifying_questions = clarifyingQuestions;
+  }
+
+  const missingInfo = pick("missing_info", "missingInfo");
+  if (missingInfo !== undefined) {
+    normalized.missing_info = missingInfo;
+  }
+
+  const relevantLogs = pick("relevant_logs", "relevantLogs");
+  if (relevantLogs !== undefined) {
+    normalized.relevant_logs = relevantLogs;
+  }
+
+  const toolResults = pick("tool_results", "toolResults");
+  if (toolResults !== undefined) {
+    normalized.tool_results = toolResults;
+  }
+
+  const actions = pick("actions", "recommendedActions");
+  if (actions !== undefined) {
+    normalized.actions = actions;
+  }
+
+  return normalized;
 };
 
 export const Chatbot = ({
@@ -181,6 +233,7 @@ export const Chatbot = ({
       needsClarification: false,
       isStreaming: true,
       events: [],
+      resumeInfo: undefined,
     };
 
     setMessages((prev: Message[]) => [...prev, streamingMessage]);
@@ -230,8 +283,30 @@ export const Chatbot = ({
 
               switch (data.type) {
                 case "status":
-                  // Skip status updates - no loading indicators needed
-                  break;
+                  {
+                    const resumeMode =
+                      data.data?.resume_mode ?? data.resume_mode ??
+                      (typeof data.mode === "string" ? data.mode : undefined);
+                    const messageText =
+                      typeof data.message === "string" && data.message.trim().length > 0
+                        ? data.message
+                        : "Resuming investigation";
+
+                    setMessages((prev: Message[]) =>
+                      prev.map((msg) =>
+                        msg.id === streamingMessageId
+                          ? {
+                              ...msg,
+                              resumeInfo: {
+                                mode: resumeMode || msg.resumeInfo?.mode,
+                                message: messageText,
+                              },
+                            }
+                          : msg
+                      )
+                    );
+                    break;
+                  }
 
                 case "node_event": {
                   // Merge node events so each node has a single box (update status/data)
@@ -264,7 +339,8 @@ export const Chatbot = ({
                         timestamp: ev.timestamp || curr.timestamp,
                         startedAt: curr.startedAt || ev.timestamp,
                       };
-                      if ((ev.status || "").toLowerCase() === "completed") {
+                      const normalizedStatus = (ev.status || "").toLowerCase();
+                      if (normalizedStatus === "completed" || normalizedStatus === "error") {
                         merged.completedAt = ev.timestamp;
                       }
                       const next = existing.slice();
@@ -275,9 +351,9 @@ export const Chatbot = ({
                   break;
                 }
 
-                case "chunk":
-                  // Handle streaming text chunks
-                  if (data.message) {
+                case "chunk": {
+                  const chunkText = typeof data.message === "string" ? data.message : typeof data.content === "string" ? data.content : "";
+                  if (chunkText) {
                     const seamFixed = (prev: string, chunk: string) => {
                       let incoming = String(chunk);
                       // If chunk begins with heading/list/code fence and previous doesn't end with newline, add one
@@ -297,7 +373,7 @@ export const Chatbot = ({
                       return prev + incoming;
                     };
 
-                    accumulatedText = seamFixed(accumulatedText, data.message);
+                    accumulatedText = seamFixed(accumulatedText, chunkText);
                     setMessages((prev: Message[]) =>
                       prev.map((msg) =>
                         msg.id === streamingMessageId
@@ -310,9 +386,11 @@ export const Chatbot = ({
                     );
                   }
                   break;
+                }
 
                 case "result":
-                  finalResult = data.data;
+                  const rawResult = data.data ?? data.message ?? data.result ?? data.payload ?? null;
+                  finalResult = normalizeResultPayload(rawResult);
                   setMessages((prev: Message[]) =>
                     prev.map((msg) =>
                       msg.id === streamingMessageId
@@ -324,6 +402,14 @@ export const Chatbot = ({
                             needsClarification: finalResult?.needs_clarification || false,
                             isStreaming: false,
                             completeResult: finalResult,
+                            resumeInfo: finalResult?.resumed_from_wait
+                              ? {
+                                  mode: finalResult?.resume_mode ?? msg.resumeInfo?.mode,
+                                  message:
+                                    msg.resumeInfo?.message ||
+                                    "Investigation resumed after pending clarification",
+                                }
+                              : msg.resumeInfo,
                           }
                         : msg
                     )
@@ -433,6 +519,7 @@ export const Chatbot = ({
                 isStreaming={message.isStreaming}
                 isExpanded={isExpanded}
                 events={message.events}
+                resumeInfo={message.resumeInfo}
                 onOpenLogsTab={(args: any) => onOpenLogsTab(args)}
               />
             )}

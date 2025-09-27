@@ -134,14 +134,29 @@ class ArchitectureLoaderNode:
             
             # Build architecture context
             architecture_context = self._build_architecture_context(
-                architecture, 
-                parsed_architecture, 
+                architecture,
+                parsed_architecture,
                 relevant_services
             )
-            
+
+            context_snapshot: Dict[str, Any] = {}
+            if self.config.enable_learning:
+                try:
+                    context_snapshot = await project_architecture_service.get_context_management_snapshot(state.get("project_id"))
+                except Exception as ctx_err:
+                    self.logger.warning(f"Context snapshot retrieval skipped: {ctx_err}")
+                    context_snapshot = {}
+
             # Update state with architecture context
             complexity_level = self._assess_architecture_complexity(parsed_architecture)
-            
+
+            context_counts = {
+                "memory_entries": len(((context_snapshot.get("context_memory") or {}).get("entries") or [])) if context_snapshot else 0,
+                "history_entries": len(context_snapshot.get("query_history") or []) if context_snapshot else 0,
+                "learning_items": len(context_snapshot.get("learning_repository") or []) if context_snapshot else 0,
+                "team_notes": len(context_snapshot.get("team_knowledge") or []) if context_snapshot else 0,
+            }
+
             updated_state = state.copy()
             updated_state.update({
                 "current_step": "architecture_loaded",
@@ -154,6 +169,36 @@ class ArchitectureLoaderNode:
                     "complexity_level": complexity_level,
                     "last_updated": architecture.updated_at.isoformat()
                 },
+                "context_memory": context_snapshot.get("context_memory") or state.get("context_memory") or {},
+                "query_history": context_snapshot.get("query_history") or state.get("query_history") or [],
+                "query_history_stats": context_snapshot.get("query_history_stats") or state.get("query_history_stats") or {},
+                "user_preferences": context_snapshot.get("user_preferences") or state.get("user_preferences") or {},
+                "session_state": context_snapshot.get("session_state") or state.get("session_state") or {},
+                "learning_repository": context_snapshot.get("learning_repository") or state.get("learning_repository") or [],
+                "learning_repository_summary": context_snapshot.get("learning_repository_summary") or state.get("learning_repository_summary") or {},
+                "team_knowledge": context_snapshot.get("team_knowledge") or state.get("team_knowledge") or [],
+                "team_knowledge_stats": context_snapshot.get("team_knowledge_stats") or state.get("team_knowledge_stats") or {},
+                "architecture_learning": context_snapshot.get("architecture_learning") or state.get("architecture_learning") or [],
+                "architecture_learning_meta": context_snapshot.get("architecture_learning_meta") or state.get("architecture_learning_meta") or {},
+                "preventive_actions": context_snapshot.get("preventive_actions") or state.get("preventive_actions") or [],
+                "proactive_monitoring_plan": context_snapshot.get("proactive_monitoring_plan") or state.get("proactive_monitoring_plan") or {},
+                "user_feedback_history": context_snapshot.get("user_feedback_history") or state.get("user_feedback_history") or [],
+                "architecture_agent_summary": context_snapshot.get("architecture_agent_summary") or state.get("architecture_agent_summary") or {},
+                "query_classifier_summary": context_snapshot.get("query_classifier_summary") or state.get("query_classifier_summary") or {},
+                "investigation_planner_summary": context_snapshot.get("investigation_planner_summary") or state.get("investigation_planner_summary") or {},
+                "filter_architect_summary": context_snapshot.get("filter_architect_summary") or state.get("filter_architect_summary") or {},
+                "api_orchestrator_stats": context_snapshot.get("api_orchestrator_stats") or state.get("api_orchestrator_stats") or {},
+                "correlation_engine_summary": context_snapshot.get("correlation_engine_summary") or state.get("correlation_engine_summary") or {},
+                "pattern_analyzer_summary": context_snapshot.get("pattern_analyzer_summary") or state.get("pattern_analyzer_summary") or {},
+                "synthesis_summary": context_snapshot.get("synthesis_summary") or state.get("synthesis_summary") or {},
+                "recommendation_summary": context_snapshot.get("recommendation_summary") or state.get("recommendation_summary") or {},
+                "context_manager_snapshot": context_snapshot.get("context_manager_snapshot") or state.get("context_manager_snapshot") or {},
+                "real_time_stream_summary": context_snapshot.get("real_time_stream_summary") or state.get("real_time_stream_summary") or {},
+                "predictive_analytics_summary": context_snapshot.get("predictive_analytics_summary") or state.get("predictive_analytics_summary") or {},
+                "ml_pattern_summary": context_snapshot.get("ml_pattern_summary") or state.get("ml_pattern_summary") or {},
+                "cross_project_learning_summary": context_snapshot.get("cross_project_learning_summary") or state.get("cross_project_learning_summary") or {},
+                "automated_remediation_summary": context_snapshot.get("automated_remediation_summary") or state.get("automated_remediation_summary") or {},
+                "performance_optimization_summary": context_snapshot.get("performance_optimization_summary") or state.get("performance_optimization_summary") or {},
                 "tool_results": {
                     **(state.get("tool_results") or {}),
                     "architecture_loader": {
@@ -166,7 +211,8 @@ class ArchitectureLoaderNode:
                         "data_flows": df_summary,
                         "infrastructure": infra_summary,
                         "performance": perf_summary,
-                        "failures": failure_summary
+                        "failures": failure_summary,
+                        "context_management": context_counts,
                     }
                 }
             })

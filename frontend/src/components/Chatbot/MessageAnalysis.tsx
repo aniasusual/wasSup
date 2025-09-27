@@ -16,18 +16,25 @@ interface MessageAnalysisProps {
 const sanitizeLine = (line: string) => line.trim().replace(/\s+/g, " ");
 
 const parseAnalysis = (analysis: string) => {
-  if (!analysis) return [] as Array<{ header: string; details: string[] }>;
-  const normalized = analysis.replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
+  if (!analysis) {
+    return [] as Array<{ header: string; details: string[] }>;
+  }
+
+  const normalized = analysis.replace(/\r?\n/g, "\n").trim();
+  if (!normalized) {
+    return [];
+  }
 
   return normalized
     .split(/\n\s*\n/)
     .map((block) => {
       const lines = block
-        .split("\n")
+        .split(/\n/)
         .map((line) => sanitizeLine(line))
         .filter(Boolean);
-      if (!lines.length) return null;
+      if (!lines.length) {
+        return null;
+      }
 
       const header = lines[0];
       const details = lines
@@ -57,106 +64,275 @@ const deriveHeaderParts = (header: string) => {
   return { badge: "", title: sanitizeLine(header) };
 };
 
+const HIDDEN_DETAIL_LABELS = new Set([
+  "original query",
+  "project id",
+  "target services",
+  "severity levels",
+  "time indicators",
+  "query type",
+  "confidence",
+  "reasoning",
+  "needs clarification",
+  "missing info",
+  "pending questions",
+  "strategy selected",
+  "questions generated",
+  "clarification item",
+]);
+
+const HIDDEN_SECTION_KEYWORDS = [
+  "query analysis",
+  "clarification requirements",
+  "clarification engine",
+  "contextual questions",
+  "query classifier",
+  "wait for user response",
+  "intelligence assessment",
+  "suggested investigation scope",
+];
+
+const HIDDEN_METADATA_PREFIXES = [
+  "original query",
+  "project id",
+  "target services",
+  "severity levels",
+  "time indicators",
+  "query type",
+  "confidence",
+  "reasoning",
+  "needs clarification",
+  "pending questions",
+  "strategy selected",
+  "questions generated",
+  "scope:",
+  "clarification item",
+];
+
+const shouldHideDetail = (content: string) => {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  const [label, ...restParts] = trimmed.split(":");
+  const hasColon = restParts.length > 0;
+  const normalizedLabel = label.trim().toLowerCase();
+
+  if (hasColon && HIDDEN_DETAIL_LABELS.has(normalizedLabel)) {
+    return true;
+  }
+
+  if (!hasColon && trimmed.toLowerCase().startsWith("scope:")) {
+    return true;
+  }
+
+  return false;
+};
+
 const DetailLine: React.FC<{ content: string }> = ({ content }) => {
+  if (shouldHideDetail(content)) {
+    return null;
+  }
+
   const trimmed = content.trim();
   const [label, ...restParts] = trimmed.split(":");
   const hasColon = restParts.length > 0;
   const value = restParts.join(":").trim();
 
   return (
-    <div className="flex items-start gap-3 text-sm leading-6 text-slate-300">
-      <span className="mt-[7px] h-2 w-2 rounded-full bg-gradient-to-r from-sky-400 via-cyan-400 to-violet-500 shadow-[0_0_10px_rgba(56,189,248,0.55)]"></span>
-      <div className="flex-1 min-w-0">
-        {hasColon ? (
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="font-semibold text-slate-100">{label.trim()}:</span>
-            <span className="text-slate-300/90">{value || "—"}</span>
-          </div>
-        ) : (
-          <span className="text-slate-300/90">{trimmed}</span>
-        )}
-      </div>
-    </div>
+    <li className="leading-6 text-sm text-slate-200/90">
+      {hasColon ? (
+        <>
+          <span className="font-semibold text-slate-100">{label.trim()}:</span>{" "}
+          <span>{value || "—"}</span>
+        </>
+      ) : (
+        trimmed
+      )}
+    </li>
   );
 };
 
-export const MessageAnalysis: React.FC<MessageAnalysisProps> = ({ analysis, isStreaming = false }) => {
+export const MessageAnalysis: React.FC<MessageAnalysisProps> = ({
+  analysis,
+  isStreaming = false,
+  needsClarification,
+  clarifyingQuestions,
+  missingInfo,
+}) => {
   const structuredSections = useMemo(() => parseAnalysis(analysis), [analysis]);
-  const hasStructuredView = structuredSections.length > 0;
 
-  if (!analysis && !isStreaming) {
+  const filteredSections = useMemo(() => {
+    return structuredSections
+      .map((section) => {
+        const header = section.header || "";
+        const headerLower = header.toLowerCase();
+        const normalizedHeader = headerLower.replace(/[^a-z]/g, "");
+
+        if (normalizedHeader.startsWith("section") || normalizedHeader.startsWith("node")) {
+          if (HIDDEN_SECTION_KEYWORDS.some((keyword) => headerLower.includes(keyword))) {
+            return null;
+          }
+        }
+
+        if (HIDDEN_SECTION_KEYWORDS.some((keyword) => headerLower.includes(keyword))) {
+          return null;
+        }
+
+        const allowedKeywords = [
+          "summary",
+          "insight",
+          "recommend",
+          "next",
+          "action",
+          "takeaway",
+          "finding",
+          "result",
+          "plan",
+          "guidance",
+        ];
+
+        if (!allowedKeywords.some((keyword) => headerLower.includes(keyword))) {
+          return null;
+        }
+
+        const visibleDetails = section.details.filter((detail) => !shouldHideDetail(detail));
+        if (!visibleDetails.length) {
+          return null;
+        }
+
+        return { header, details: visibleDetails };
+      })
+      .filter((section): section is { header: string; details: string[] } => Boolean(section));
+  }, [structuredSections]);
+
+  const hasStructuredView = filteredSections.length > 0;
+
+  const clarificationPrompts = useMemo(() => {
+    const seen = new Set<string>();
+    return (clarifyingQuestions || [])
+      .map((q) => (typeof q === "string" ? { question: q, context: "" } : q))
+      .filter((q) => {
+        const text = q?.question?.trim();
+        if (!text) {
+          return false;
+        }
+        const key = text.toLowerCase();
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+  }, [clarifyingQuestions]);
+  const pendingMissingInfo = (missingInfo || []).filter((item) => Boolean(item?.trim()));
+  const showClarificationCallout = needsClarification && (clarificationPrompts.length > 0 || pendingMissingInfo.length > 0);
+
+  const sanitizedAnalysis = useMemo(() => {
+    if (!analysis) {
+      return "";
+    }
+
+    const lines = analysis.split(/\r?\n/);
+    const kept: string[] = [];
+    let skipBlock = false;
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+
+      if (/^(section|node)/i.test(trimmedLine)) {
+        skipBlock = true;
+        continue;
+      }
+
+      if (skipBlock) {
+        if (trimmedLine === "") {
+          skipBlock = false;
+        }
+        continue;
+      }
+
+      const lower = trimmedLine.toLowerCase();
+      if (HIDDEN_METADATA_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
+        continue;
+      }
+
+      kept.push(line);
+    }
+
+    return kept.join("\n").trim();
+  }, [analysis]);
+
+  if (!analysis && !isStreaming && !showClarificationCallout) {
     return null;
   }
 
-  if (!hasStructuredView) {
-    return (
-      <div className="space-y-4">
-        {analysis ? (
-          <div className="relative">
-            <ProperMarkdownRenderer content={analysis} />
-            {isStreaming && (
-              <div className="absolute bottom-0 right-0 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-3 text-slate-300 py-6">
-            <div className="flex space-x-1.5">
-              <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce"></div>
-              <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.12s" }}></div>
-              <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.24s" }}></div>
-            </div>
-            <span className="text-sm font-medium">Thinking…</span>
+  const clarificationCallout =
+    showClarificationCallout ? (
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm leading-6 text-amber-100">
+        <div className="text-[11px] uppercase tracking-[0.25em] text-amber-200">Clarification Needed</div>
+        {clarificationPrompts.length > 0 && (
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-amber-50">
+            {clarificationPrompts.map((prompt, idx) => (
+              <li key={prompt.question ?? idx}>{prompt.question}</li>
+            ))}
+          </ol>
+        )}
+        {pendingMissingInfo.length > 0 && (
+          <div className="mt-2 space-y-1">
+            <div className="text-[12px] uppercase tracking-wide text-amber-200/80">Missing info</div>
+            <ul className="list-disc space-y-1 pl-5 text-amber-50">
+              {pendingMissingInfo.map((item, idx) => (
+                <li key={`${item}-${idx}`}>{item}</li>
+              ))}
+            </ul>
           </div>
         )}
+        <div className="mt-3 text-[12px] text-amber-100/80">
+          Share the answers and I will pick up the investigation from here.
+        </div>
       </div>
-    );
+    ) : null;
+
+  if (needsClarification) {
+    return <div className="space-y-4">{clarificationCallout}</div>;
   }
 
   return (
     <div className="space-y-4">
-      {structuredSections.map((section, idx) => {
-        const { badge, title } = deriveHeaderParts(section.header);
-        const badgeLabel = badge || "ANALYSIS";
-        const titleLabel = title || section.header;
+      {clarificationCallout}
 
-        return (
-          <div
-            key={`${section.header}-${idx}`}
-            className="group relative overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-900/45 backdrop-blur-md shadow-[0_10px_40px_rgba(15,23,42,0.35)] transition-all duration-500 hover:-translate-y-1 hover:border-slate-700/70 hover:shadow-[0_25px_60px_rgba(56,189,248,0.18)] animate-slide-up"
-            style={{ animationDelay: `${idx * 0.05}s` }}
-          >
-            <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 bg-[radial-gradient(120%_110%_at_50%_0%,rgba(56,189,248,0.12),rgba(168,85,247,0.05)_45%,transparent)]" />
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-sky-500/70 via-transparent to-violet-500/70" />
+      {hasStructuredView ? (
+        <div className="space-y-3 text-sm leading-6 text-slate-200/90">
+          {filteredSections.map((section, idx) => {
+            const { badge, title } = deriveHeaderParts(section.header);
+            const heading = [badge, title].filter(Boolean).join(" • ") || section.header;
 
-            <div className="relative z-10 px-4 py-4 sm:px-6 sm:py-6 space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-2">
-                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-sky-500/40 bg-sky-500/10 text-[11px] font-semibold tracking-[0.2em] text-sky-200 uppercase">
-                    {badgeLabel}
-                  </span>
-                  <h3 className="text-base sm:text-lg font-semibold text-slate-100 tracking-tight">
-                    {titleLabel}
-                  </h3>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-slate-400 uppercase tracking-[0.3em]">
-                  <span className="h-2 w-2 rounded-full bg-gradient-to-r from-sky-400 via-cyan-400 to-violet-500 shadow-[0_0_12px_rgba(56,189,248,0.65)] animate-pulse" />
-                  <span>{isStreaming && idx === 0 ? "Updating" : "Insight"}</span>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {section.details.length > 0 ? (
-                  section.details.map((detail, detailIdx) => (
+            return (
+              <div key={`${section.header}-${idx}`} className="space-y-1">
+                {heading && <div className="font-semibold text-slate-100">{heading}</div>}
+                <ul className="list-disc space-y-1 pl-5">
+                  {section.details.map((detail, detailIdx) => (
                     <DetailLine key={`${section.header}-${detailIdx}`} content={detail} />
-                  ))
-                ) : (
-                  <div className="text-sm text-slate-300/80">No additional details supplied.</div>
-                )}
+                  ))}
+                </ul>
               </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-3 text-sm leading-6 text-slate-200/90">
+          {sanitizedAnalysis ? (
+            <ProperMarkdownRenderer content={sanitizedAnalysis} />
+          ) : (
+            <div className="flex items-center gap-2 text-slate-300">
+              <span className="text-sm font-medium">Thinking…</span>
+              <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
             </div>
-          </div>
-        );
-      })}
+          )}
+        </div>
+      )}
     </div>
   );
 };
