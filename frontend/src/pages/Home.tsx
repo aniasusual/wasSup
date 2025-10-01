@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Search, RefreshCw, Download, Settings, X } from "lucide-react";
 import { ProviderSelector } from "../components/ProviderSelector";
 import { LogTabs } from "../components/LogTabs";
 import { EnhancedLogViewer } from "../components/EnhancedLogViewer";
-import { Chatbot } from "../components/Chatbot";
 import ProviderFilters from "../components/Filters/ProviderFilters";
 import { useAuth } from "../contexts/Auth";
 import { useLogService } from "../services/logService";
@@ -11,10 +10,12 @@ import type { GCPService, LogTab } from "../types/gcp";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
 import { ProjectArchitecturePrompt } from "../components/ProjectArchitecturePrompt";
+import { ChatbotPanel } from "../components/chat";
 import toast from "react-hot-toast";
 import { parseGCPErrorMessage } from "../utils/errorUtils";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import useChatSession from "../hooks/useChatSession";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -94,6 +95,49 @@ export const Home = () => {
   const [logCount, setLogCount] = useState(100); // Add log count state
   const [isChatbotExpanded, setIsChatbotExpanded] = useState(false); // Add chatbot expand state
   const [projectArchitecture, setProjectArchitecture] = useState<string>(""); // Project architecture state
+
+  const chatBaseContext = useMemo(() => {
+    const context: Record<string, unknown> = {};
+    if (selectedService?.id) {
+      context.services = [selectedService.id];
+    }
+    if (pendingSearch.searchQuery) {
+      context.query = pendingSearch.searchQuery;
+    }
+    if (pendingSearch.startDate && pendingSearch.endDate) {
+      context.timeRange = {
+        start: pendingSearch.startDate,
+        end: pendingSearch.endDate,
+      };
+    }
+    if (activeTabId) {
+      context.activeTabId = activeTabId;
+    }
+    if (projectArchitecture) {
+      context.architectureSummary = projectArchitecture;
+    }
+    return context;
+  }, [activeTabId, pendingSearch, projectArchitecture, selectedService]);
+
+  const chatSession = useChatSession({
+    projectId: selectedProject || undefined,
+    baseContext: chatBaseContext,
+  });
+
+  const {
+    messages: chatMessages,
+    isStreaming: isChatStreaming,
+    error: chatError,
+    suggestions: chatSuggestions,
+    lastPlan: chatPlan,
+    contextSummary: chatContextSummary,
+    queryAnalysis: chatQueryAnalysis,
+    queryHistory: chatQueryHistory,
+    sendMessage: sendChatMessage,
+    runSuggestion: runChatSuggestion,
+    resetChat,
+  } = chatSession;
+  const [chatDraft, setChatDraft] = useState("");
 
   // Resizable splitter state for logs/chat widths (xl+ screens)
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -275,41 +319,6 @@ export const Home = () => {
     void fetchLogsForTab(newTab);
   };
 
-  // Open a new tab populated with logs returned from the chatbot
-  const handleOpenLogsTabFromChat = ({ entries, title }: { entries: any[]; title?: string }) => {
-    const tabId = `chat-logs-${Date.now()}`;
-    const newTab: LogTab = {
-      id: tabId,
-      title: title || `AI Results (${entries?.length || 0})`,
-      serviceId: "chat_results",
-      isActive: true,
-      filters: {
-        severity: [],
-        resourceType: "chat_results",
-        logType: [],
-        sourceLocation: "",
-        userAccount: "",
-        requestId: "",
-        timeRange: "custom",
-        customQuery: "",
-        customStartTime: "",
-        customEndTime: "",
-      },
-      query: "",
-      lastUpdated: new Date(),
-      type: "insight",
-    } as any;
-
-    setTabs((prev) => [
-      ...prev.map((t) => ({ ...t, isActive: false })),
-      newTab,
-    ]);
-    // Attach provided entries directly to the tab logs store
-    setTabLogs((prev) => ({ ...prev, [tabId]: Array.isArray(entries) ? entries : [] }));
-    setTabNextTokens((prev) => ({ ...prev, [tabId]: null }));
-    setActiveTabId(tabId);
-    setSelectedService(undefined);
-  };
 
   // Update active tab when changed
   useEffect(() => {
@@ -552,6 +561,33 @@ export const Home = () => {
     [tabs]
   );
 
+  const handleChatSend = useCallback(() => {
+    const trimmed = chatDraft.trim();
+    if (!trimmed) return;
+
+    void sendChatMessage(trimmed, {
+      projectId: selectedProject || undefined,
+      context: { ...chatBaseContext },
+    });
+    setChatDraft("");
+  }, [chatBaseContext, chatDraft, selectedProject, sendChatMessage]);
+
+  const handleChatSuggestionSelect = useCallback(
+    (prompt: string) => {
+      setChatDraft("");
+      void runChatSuggestion(prompt, {
+        projectId: selectedProject || undefined,
+        context: { ...chatBaseContext },
+      });
+    },
+    [chatBaseContext, runChatSuggestion, selectedProject]
+  );
+
+  const handleChatReset = useCallback(() => {
+    setChatDraft("");
+    resetChat();
+  }, [resetChat]);
+
   // Handle chatbot expand toggle
   const handleChatbotToggle = useCallback(() => {
     setIsChatbotExpanded((prev) => !prev);
@@ -748,21 +784,24 @@ export const Home = () => {
             {isChatbotExpanded ? (
               /* Full-screen Chatbot when expanded */
               <div className="w-full">
-                <div className="glass-card gradient-border hover-card h-[75vh] animate-fade-in">
-                  <div className="h-full flex flex-col">
-                    <Chatbot
-                      key="chatbot-main" // Use same key to maintain component identity
-                      selectedServices={
-                        selectedService ? [selectedService.id] : []
-                      }
-                      projectId={selectedProject}
-                      projectArchitecture={projectArchitecture}
-                      onOpenInsight={handleOpenInsightFromChat}
-                      onOpenLogsTab={handleOpenLogsTabFromChat}
-                      isExpanded={isChatbotExpanded}
-                      onToggleExpand={handleChatbotToggle}
-                    />
-                  </div>
+                <div className="glass-card gradient-border hover-card h-[75vh] min-h-0 animate-fade-in">
+                  <ChatbotPanel
+                    messages={chatMessages}
+                    isStreaming={isChatStreaming}
+                    error={chatError}
+                    suggestions={chatSuggestions}
+                    inputValue={chatDraft}
+                    onInputChange={setChatDraft}
+                    onSend={handleChatSend}
+                    onSuggestionSelect={handleChatSuggestionSelect}
+                    onReset={handleChatReset}
+                    onToggleExpand={handleChatbotToggle}
+                    isExpanded={true}
+                    plan={chatPlan}
+                    contextSummary={chatContextSummary}
+                    queryAnalysis={chatQueryAnalysis}
+                    queryHistory={chatQueryHistory}
+                  />
                 </div>
               </div>
             ) : (
@@ -786,9 +825,7 @@ export const Home = () => {
                           <select
                             className="ml-2 px-2 py-1 rounded bg-gray-800 text-blue-400 border border-blue-800 text-xs xl:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={logCount}
-                            onChange={(e) =>
-                              setLogCount(Number(e.target.value))
-                            }
+                            onChange={(e) => setLogCount(Number(e.target.value))}
                             style={{ minWidth: 60 }}
                             title="Select number of logs to display"
                           >
@@ -809,9 +846,7 @@ export const Home = () => {
                         {isLoading && (
                           <div className="flex items-center space-x-2 xl:space-x-3 text-slate-400">
                             <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                            <span className="text-xs sm:text-sm xl:text-base">
-                              Loading logs...
-                            </span>
+                            <span className="text-xs sm:text-sm xl:text-base">Loading logs...</span>
                           </div>
                         )}
                       </div>
@@ -820,7 +855,7 @@ export const Home = () => {
                       {(!activeTabId ||
                         !tabLogs[activeTabId] ||
                         tabLogs[activeTabId].length === 0) &&
-                      !isLoading ? (
+                        !isLoading ? (
                         <div className="flex-1 flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8 min-h-[40vh]">
                           <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
                             <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
@@ -852,14 +887,10 @@ export const Home = () => {
                               ))}
                             </div>
                           )}
-                          <EnhancedLogViewer
-                            logs={tabLogs[activeTabId] || []}
-                          />
+                          <EnhancedLogViewer logs={tabLogs[activeTabId] || []} />
                           {/* Loading more indicator */}
                           {isLoadingMore && (
-                            <div className="py-2 text-center text-xs text-gray-400">
-                              Loading more...
-                            </div>
+                            <div className="py-2 text-center text-xs text-gray-400">Loading more...</div>
                           )}
                         </div>
                       )}
@@ -882,21 +913,24 @@ export const Home = () => {
 
                 {/* Chatbot Section */}
                 <div className="flex flex-col min-w-0">
-                  <div className="glass-card gradient-border hover-card flex flex-col h-[70vh] animate-slide-up min-w-0 overflow-hidden">
-                    <div className="h-full flex flex-col min-w-0">
-                    <Chatbot
-                        key="chatbot-main" // Use same key to maintain component identity
-                        selectedServices={
-                          selectedService ? [selectedService.id] : []
-                        }
-                        projectId={selectedProject}
-                        projectArchitecture={projectArchitecture}
-                        onOpenInsight={handleOpenInsightFromChat}
-                        onOpenLogsTab={handleOpenLogsTabFromChat}
-                        isExpanded={isChatbotExpanded}
-                        onToggleExpand={handleChatbotToggle}
-                      />
-                    </div>
+                  <div className="glass-card gradient-border hover-card flex h-[70vh] min-h-0 flex-col animate-slide-up min-w-0 overflow-hidden">
+                  <ChatbotPanel
+                    messages={chatMessages}
+                    isStreaming={isChatStreaming}
+                    error={chatError}
+                    suggestions={chatSuggestions}
+                    inputValue={chatDraft}
+                    onInputChange={setChatDraft}
+                    onSend={handleChatSend}
+                    onSuggestionSelect={handleChatSuggestionSelect}
+                    onReset={handleChatReset}
+                    onToggleExpand={handleChatbotToggle}
+                    isExpanded={false}
+                    plan={chatPlan}
+                    contextSummary={chatContextSummary}
+                    queryAnalysis={chatQueryAnalysis}
+                    queryHistory={chatQueryHistory}
+                  />
                   </div>
                 </div>
               </div>

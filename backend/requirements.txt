@@ -14,18 +14,8 @@ google-cloud-resource-manager==1.14.2
 google-auth==2.40.3
 google-auth-httplib2==0.2.0
 google-api-python-client==2.179.0
+google-generativeai==0.8.1
 
-# LangChain and AI
-langchain
-langchain-anthropic
-langchain-core
-langchain-google-genai
-langchain-text-splitters
-langgraph==0.6.6
-langgraph-checkpoint==2.1.1
-langgraph-prebuilt==0.6.4
-langgraph-sdk==0.2.3
-langsmith>=0.3.45
 
 # Database
 motor==3.6.0

@@ -7,31 +7,20 @@ An intelligent log analysis system with RCA (Root Cause Analysis) powered by Lan
 - Multi-tenant architecture
 - Intelligent log sampling and compression
 - Real-time log streaming
-- AI-powered root cause analysis with LangGraph agent
+- Advanced log analysis and filtering
 - Scalable to millions of logs
-- State-driven conversation management
-- Intelligent workflow routing
 
 ## Architecture
 
-### LangGraph Agent System
+### Log Analysis System
 
-The system now uses **LangGraph** for building intelligent, state-driven agents that can:
+The system provides comprehensive log analysis capabilities:
 
-- **Maintain conversation state** across multiple interactions
-- **Route workflows intelligently** based on user input and context
-- **Handle complex multi-step investigations** with conditional logic
-- **Provide persistent memory** for long-running conversations
-- **Generate contextual actions** and follow-up suggestions
-
-#### Key Components
-
-- **State Management**: Persistent `AgentState` objects track investigation progress
-- **Workflow Nodes**: Specialized nodes for input analysis, context retrieval, log analysis, and more
-- **Conditional Routing**: Dynamic decision-making based on current state
-- **Tool Integration**: Seamless integration with GCP APIs, vector stores, and conversation management
-
-For detailed information about the LangGraph implementation, see [docs/LANGGRAPH_AGENT_IMPLEMENTATION.md](docs/LANGGRAPH_AGENT_IMPLEMENTATION.md).
+- **Real-time log streaming** from Google Cloud Platform
+- **Advanced filtering and querying** with GCP Logging API
+- **Multi-project support** with project architecture management
+- **Scalable log processing** for large-scale deployments
+- **Secure authentication** with Google OAuth2
 
 ## Quick Start
 
@@ -47,27 +36,23 @@ uvicorn app.main:app --reload
 backend/
 ├── app/
 │   ├── api/                    # API routes and endpoints
-│   │   ├── routes/            # Route handlers (auth, logs, agent, project_architecture)
+│   │   ├── routes/            # Route handlers (auth, logs, project_architecture)
 │   │   ├── helpers/           # Authentication helpers
 │   │   └── data/              # API endpoint configurations
 │   ├── core/                  # Core configuration and database
 │   ├── models/                # Data models
-│   │   ├── agent/             # Agent-specific models
 │   │   └── user.py            # User models
 │   └── services/              # Business logic services
-│       ├── agent/             # LangGraph agent implementation
-│       │   └── core/          # Core agent nodes and workflow
 │       ├── user_service.py    # User management
 │       ├── project_architecture_service.py  # Architecture management
 │       ├── conversation_manager.py          # Conversation state management
 │       └── session_cleanup.py               # Session cleanup tasks
 ├── requirements.txt           # Python dependencies
-└── langgraph.json            # LangGraph configuration
 ```
 
 ## Features
 
-- **LangGraph Agent System**: Intelligent workflow routing and state management
+- **Advanced Log Analysis**: Comprehensive log filtering and analysis capabilities
 - **GCP Integration**: Direct integration with Google Cloud Logging and Resource Manager
 - **Authentication**: OAuth2 with Google for secure access
 - **Project Architecture**: Support for storing and analyzing project architecture
@@ -76,18 +61,15 @@ backend/
 
 ## API Endpoints
 
-### Agent Endpoints
+### Log Analysis Endpoints
 
-- `POST /agent/query` - Submit a question for analysis
-- `GET /agent/sessions` - Get user's active sessions
-- `GET /agent/sessions/{session_id}/history` - Get conversation history
-- `DELETE /agent/sessions/{session_id}` - Delete a session
-- `GET /agent/resources/{project_id}` - Discover GCP resources
-- `GET /agent/resources/{project_id}/summary` - Get resource summary
+- `POST /logs/query` - Query logs with advanced filtering
+- `GET /logs/projects` - Get available GCP projects
+- `POST /logs/gcp-resource-options` - Get GCP resource options
 
-### Enhanced Response Format
+### Response Format
 
-The new agent provides enhanced responses with additional fields:
+The API provides structured responses for log analysis:
 
 ```json
 {

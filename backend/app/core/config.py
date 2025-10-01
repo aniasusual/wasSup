@@ -1,6 +1,6 @@
 import secrets
 import warnings
-from typing import Annotated, Any, Literal, Union, List
+from typing import Annotated, Any, Literal, Optional, Union, List
 
 from pydantic import (
     AnyUrl,
@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     # MongoDB Configuration
     MONGODB_URL: str = "mongodb+srv://anni8sept_db_user:REDACTED_SECRET@recce-default.ubcap0w.mongodb.net/?retryWrites=true&w=majority&appName=recce-default"
     DATABASE_NAME: str = "recce"
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
+    GEMINI_MODEL: Optional[str] = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     @computed_field  # type: ignore[prop-decorator]
     @property
