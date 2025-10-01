@@ -6,7 +6,7 @@ A modern React frontend for the GCP Log Explorer system, built with TypeScript, 
 
 - **Modern UI**: Built with React 19, TypeScript, and Tailwind CSS
 - **Real-time Log Streaming**: Live updates for log analysis
-- **Interactive Chatbot**: AI-powered log analysis with streaming responses
+- **Advanced Log Viewer**: Comprehensive log analysis and filtering interface
 - **Multi-tab Interface**: Organize multiple log queries simultaneously
 - **Project Architecture**: Visualize and manage GCP project architecture
 - **Authentication**: Secure OAuth2 integration with Google
@@ -30,10 +30,6 @@ A modern React frontend for the GCP Log Explorer system, built with TypeScript, 
 ```
 frontend/src/
 ├── components/           # Reusable UI components
-│   ├── Chatbot/         # Chatbot-specific components
-│   │   ├── AIMessage.tsx
-│   │   ├── ChatHeader.tsx
-│   │   ├── ChatInput.tsx
 │   │   ├── EmptyState.tsx
 │   │   ├── MessageAnalysis.tsx
 │   │   ├── ProperMarkdownRenderer.tsx
@@ -42,7 +38,6 @@ frontend/src/
 │   │   ├── GcpFilters.tsx
 │   │   └── ProviderFilters.tsx
 │   ├── AuthSuccess.tsx
-│   ├── Chatbot.tsx
 │   ├── DateTimeSearchBar.tsx
 │   ├── EnhancedLogViewer.tsx
 │   ├── GCPProjectSelector.tsx
@@ -110,10 +105,10 @@ npm run lint
 
 ## Key Components
 
-### Chatbot System
-- **Streaming Responses**: Real-time AI responses with typing indicators
-- **Message Analysis**: Rich markdown rendering with syntax highlighting
-- **Context Awareness**: Maintains conversation context across sessions
+### Log Analysis System
+- **Real-time Streaming**: Live log updates with efficient filtering
+- **Advanced Filtering**: Comprehensive filter options for log analysis
+- **Multi-tab Support**: Organize multiple log queries simultaneously
 
 ### Log Management
 - **Multi-tab Interface**: Organize multiple log queries
@@ -143,4 +138,4 @@ The frontend communicates with the backend API through:
 - **Authentication**: OAuth2 flow with Google
 - **Log Services**: Real-time log fetching and analysis
 - **Project Architecture**: Architecture management and analysis
-- **WebSocket**: Real-time streaming for chatbot responses
+- **Real-time Updates**: Live streaming for log analysis

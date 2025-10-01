@@ -1,9 +1,0 @@
-{
-  "dependencies": [
-    "."
-  ],
-  "graphs": {
-    "gcp_log_investigation_agent": "./app/services/agent/core/workflow.py:get_agent_graph"
-  },
-  "env": ".env"
-}

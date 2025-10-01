@@ -76,7 +76,7 @@ export const Login = () => {
             <div className="flex items-start">
               <span className="text-purple-400 font-bold mr-2">2.</span>
               <span className="text-slate-300">
-                Tell the chatbot your problem:{" "}
+                Tell the system your problem:{" "}
                 <span className="text-slate-400 italic">
                   "User can't push to GitHub"
                 </span>

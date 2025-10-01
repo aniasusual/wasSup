@@ -206,68 +206,6 @@ async def get_projects(current_user: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Error fetching projects: {str(e)}")
 
 
-@router.post("/logs/analyze")
-async def analyze_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
-    """Agent endpoint for log analysis - works with analysis data from query endpoint"""
-    user_token_data = await get_user_tokens(current_user)
-    if not user_token_data:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-    
-    if is_token_expired(current_user):
-        await refresh_token(current_user)
-        user_token_data = await get_user_tokens(current_user)
-    
-    try:
-        # Extract analysis parameters
-        analysis_question = query.get("question", "")
-        analysis_data = query.get("analysis_data", {})
-        filter_applied = query.get("filter_applied", "")
-        project_id = query.get("project_id", "")
-        
-        if not analysis_data or not analysis_data.get("logs_for_analysis"):
-            raise HTTPException(status_code=400, detail="No analysis data provided. Please query logs first.")
-        
-        # Prepare data for agent analysis with complete log objects
-        agent_analysis_data = {
-            "question": analysis_question,
-            "filter_applied": filter_applied,
-            "project_id": project_id,
-            "logs": analysis_data["logs_for_analysis"],  # Complete log objects
-            "complete_logs": analysis_data["logs_for_analysis"],  # Explicit alias for complete logs
-            "summary": {
-                "total_entries": analysis_data["total_entries"],
-                "severity_distribution": analysis_data["severity_distribution"],
-                "resource_types": analysis_data["resource_types"],
-                "time_range": analysis_data["time_range"],
-                "error_count": analysis_data["error_count"],
-                "warning_count": analysis_data["warning_count"],
-                "info_count": analysis_data["info_count"]
-            }
-        }
-
-        # TODO: Here you would integrate with your AI agent
-        # The agent can now analyze the complete log objects with all their fields and structure
-        return {
-            "analysis_data": agent_analysis_data,
-            "agent_ready": True,
-            "message": f"Complete log objects prepared for agent analysis. {len(analysis_data['logs_for_analysis'])} complete log entries available for analysis.",
-            "metadata": {
-                "logs_analyzed": len(analysis_data["logs_for_analysis"]),
-                "question": analysis_question,
-                "filter_applied": filter_applied,
-                "project_id": project_id,
-                "summary_stats": {
-                    "total_entries": analysis_data["total_entries"],
-                    "error_count": analysis_data["error_count"],
-                    "warning_count": analysis_data["warning_count"],
-                    "info_count": analysis_data["info_count"]
-                }
-            }
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error analyzing logs: {str(e)}")
-
 @router.post("/logs/gcp-resource-options")
 async def gcp_resource_options(
     request: dict = Body(...),
