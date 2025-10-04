@@ -12,10 +12,7 @@ from ..routes.auth import refresh_token
 import requests
 
 from ...models.chat import (
-    ChatMessagePayload,
     ChatTurnRequest,
-    ChatTurnResponse,
-    LogReference,  # Add this model
 )
 from agno.db.mongo import MongoDb
 
@@ -72,58 +69,6 @@ def build_investigation_context(architecture_summary: str, project_id: str) -> s
     - Identify which GCP services are relevant based on the query and architecture.
     - If the service is not explicitly mentioned in the query, infer it from the architecture summary.
     """
-
-
-def parse_log_references(response_text: str) -> List[Dict[str, Any]]:
-    """
-    Parse <log_references> XML from agent response.
-    
-    Returns a list of log reference dictionaries that can be sent to frontend.
-    """
-    log_refs = []
-    
-    # Find the <log_references> block
-    match = re.search(r'<log_references>(.*?)</log_references>', response_text, re.DOTALL)
-    if not match:
-        return log_refs
-    
-    xml_content = f"<log_references>{match.group(1)}</log_references>"
-    
-    try:
-        root = ET.fromstring(xml_content)
-        
-        for log_ref in root.findall('log_ref'):
-            ref_id = log_ref.find('id')
-            description = log_ref.find('description')
-            filter_elem = log_ref.find('filter')
-            metadata = log_ref.find('metadata')
-            preview = log_ref.find('preview')
-            
-            ref_dict = {
-                'id': ref_id.text if ref_id is not None else '',
-                'description': description.text if description is not None else '',
-                'filter': filter_elem.text if filter_elem is not None else '',
-                'metadata': {},
-                'preview': []
-            }
-            
-            # Parse metadata
-            if metadata is not None:
-                for child in metadata:
-                    ref_dict['metadata'][child.tag] = child.text
-            
-            # Parse preview entries
-            if preview is not None:
-                for entry in preview.findall('entry'):
-                    if entry.text:
-                        ref_dict['preview'].append(entry.text)
-            
-            log_refs.append(ref_dict)
-    
-    except ET.ParseError as e:
-        print(f"[WARNING] Failed to parse log_references XML: {e}")
-    
-    return log_refs
 
 
 def _fetch_logs_impl(
@@ -235,7 +180,7 @@ async def conversation_respond(
         )
 
     # Create a tool wrapper that captures project_id and access_token
-    @tool(show_result=True)
+    @tool(show_result=False)
     def fetch_logs_bound(
         filter_str: str,
         order_by: str = "timestamp desc",
@@ -269,6 +214,9 @@ async def conversation_respond(
 
     # For debugging - this will show tool execution
     agent.print_response(full_message, stream=True)
+
+
+    return response
 
     # Return response matching your ChatTurnResponse model structure
     # return ChatTurnResponse(

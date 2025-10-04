@@ -63,6 +63,7 @@ export const GCPProjectSelector = ({
   };
 
   const handleToggleInputMode = () => {
+    setIsOpen(false);
     setIsManualInput(!isManualInput);
     if (!isManualInput) {
       setManualProjectId(selectedProject);
@@ -75,12 +76,24 @@ export const GCPProjectSelector = ({
     (p) => p.project_id === selectedProject
   );
 
+  const toggleDropdown = () => setIsOpen((prev) => !prev);
+
   return (
     <div className={`relative ${className}`}>
       {/* Selected Project Display */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-gray-800 to-gray-900 border border-gray-700/50 rounded-xl text-white hover:bg-gradient-to-r hover:from-gray-700 hover:to-gray-800 transition-all duration-300 shadow-sm"
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggleDropdown}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            toggleDropdown();
+          }
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-gray-800 to-gray-900 border border-gray-700/50 rounded-xl text-white hover:bg-gradient-to-r hover:from-gray-700 hover:to-gray-800 transition-all duration-300 shadow-sm cursor-pointer"
       >
         <div className="flex items-center gap-4">
           {selectedProjectData ? (
@@ -132,7 +145,7 @@ export const GCPProjectSelector = ({
             }`}
           />
         </div>
-      </button>
+      </div>
 
       {/* Manual Input Mode */}
       {isManualInput && (

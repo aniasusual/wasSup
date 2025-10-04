@@ -40,7 +40,7 @@ const defaultSuggestions: ChatSuggestion[] = [
   {
     id: "suggestion-architecture",
     label: "Service health",
-    prompt: "Show me recent errors impacting the payment service",
+    prompt: "Tell me what are the errors in cloud run in last 1 minute",
   },
   {
     id: "suggestion-latency",
@@ -77,26 +77,52 @@ const toSuggestionLabel = (text: string, index: number) => {
   return `${trimmed.slice(0, 37)}… (${index + 1})`;
 };
 
-const buildSuggestionsFromFollowUps = (followUps: string[]): ChatSuggestion[] => {
-  if (!followUps.length) {
-    return defaultSuggestions;
+const extractStructuredReply = (rawContent: string) => {
+  const fencePattern = /```json\s*([\s\S]*?)```/i;
+  const match = fencePattern.exec(rawContent);
+
+  if (!match) {
+    return {
+      markdown: rawContent.trim(),
+      json: null as string | null,
+    };
   }
 
-  return followUps.map((question, index) => ({
-    id: `followup-${index}-${Date.now()}`,
-    label: toSuggestionLabel(question, index),
-    prompt: question,
-  }));
+  const jsonContent = match[1].trim();
+  const before = rawContent.slice(0, match.index).trim();
+  const after = rawContent.slice(match.index + match[0].length).trim();
+  const markdown = [before, after].filter(Boolean).join("\n\n");
+
+  return {
+    markdown,
+    json: jsonContent,
+  };
 };
 
-const mapReplyToMessage = (reply: ChatTurnResponse["reply"]): ChatMessage => ({
-  id: reply.id,
-  role: reply.role,
-  content: reply.content,
-  timestamp: reply.timestamp,
-  status: reply.status ?? "sent",
-  metadata: reply.metadata ?? {},
-});
+const mapReplyToMessage = (reply: ChatTurnResponse["reply"]): ChatMessage => {
+  const { markdown, json } = extractStructuredReply(reply.content);
+  const metadata: Record<string, unknown> = {
+    ...(reply.metadata ?? {}),
+    rawContent: reply.content,
+  };
+
+  if (markdown && markdown !== reply.content) {
+    metadata.markdown = markdown;
+  }
+
+  if (json) {
+    metadata.jsonPayload = json;
+  }
+
+  return {
+    id: reply.id,
+    role: reply.role,
+    content: markdown,
+    timestamp: reply.timestamp,
+    status: reply.status ?? "sent",
+    metadata,
+  };
+};
 
 export const useChatSession = (
   config: UseChatSessionConfig = {}
@@ -201,19 +227,8 @@ export const useChatSession = (
           token
         );
         console.log("Sending chat turn response", response);
-        console.log("sessionId", sessionId);
-        console.log("effectiveProjectId", effectiveProjectId);
-        console.log("effectiveContext", effectiveContext);
 
-
-        setSessionId(response.sessionId);
-        setLastPlan(response.plan);
-        setContextSummary(response.contextSummary);
-        setSuggestions(buildSuggestionsFromFollowUps(response.followUpQuestions));
-        setQueryAnalysis(response.queryAnalysis ?? null);
-        setQueryHistory(response.queryHistory);
-
-        updateMessageById(assistantMessageId, () => mapReplyToMessage(response.reply));
+        updateMessageById(assistantMessageId, () => mapReplyToMessage(response));
       } catch (err: unknown) {
         const detail =
           err instanceof Error ? err.message : "Unexpected error contacting the assistant.";
