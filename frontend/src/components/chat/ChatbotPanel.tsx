@@ -7,6 +7,7 @@ import type {
   QueryUnderstandingResult,
   QueryHistoryEntry,
   FilterSuggestion,
+  ChatLogReference,
 } from "../../types/chat";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessageList } from "./ChatMessageList";
@@ -31,6 +32,7 @@ interface ChatbotPanelProps {
   queryAnalysis?: QueryUnderstandingResult | null;
   queryHistory?: QueryHistoryEntry[];
   onApplyFilterSuggestion?: (suggestion: FilterSuggestion) => void;
+  onLogReferenceSelect?: (reference: ChatLogReference) => void;
 }
 
 export const ChatbotPanel = ({
@@ -50,6 +52,7 @@ export const ChatbotPanel = ({
   queryAnalysis = null,
   queryHistory = [],
   onApplyFilterSuggestion,
+  onLogReferenceSelect,
 }: ChatbotPanelProps) => {
   const hasInsights = useMemo(() => {
     if (!queryAnalysis) return false;
@@ -78,7 +81,11 @@ export const ChatbotPanel = ({
 
       <div className="flex-1 min-h-0 px-4 py-4">
         <div className="h-full overflow-y-auto space-y-4 pr-2">
-          <ChatMessageList messages={messages} isStreaming={isStreaming} />
+          <ChatMessageList
+            messages={messages}
+            isStreaming={isStreaming}
+            onLogReferenceSelect={onLogReferenceSelect}
+          />
           {(plan || (isStreaming && !plan) || hasInsights) && (
             <ChatPlanSummary
               plan={plan ?? null}

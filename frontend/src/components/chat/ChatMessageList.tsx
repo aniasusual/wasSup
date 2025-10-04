@@ -1,13 +1,18 @@
 import { useEffect, useRef } from "react";
-import type { ChatMessage } from "../../types/chat";
+import type { ChatLogReference, ChatMessage } from "../../types/chat";
 import { ChatMessageBubble } from "./ChatMessageBubble";
 
 interface ChatMessageListProps {
   messages: ChatMessage[];
   isStreaming: boolean;
+  onLogReferenceSelect?: (reference: ChatLogReference) => void;
 }
 
-export const ChatMessageList = ({ messages, isStreaming }: ChatMessageListProps) => {
+export const ChatMessageList = ({
+  messages,
+  isStreaming,
+  onLogReferenceSelect,
+}: ChatMessageListProps) => {
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -25,7 +30,11 @@ export const ChatMessageList = ({ messages, isStreaming }: ChatMessageListProps)
   return (
     <div className="space-y-4">
       {messages.map((message) => (
-        <ChatMessageBubble key={message.id} message={message} />
+        <ChatMessageBubble
+          key={message.id}
+          message={message}
+          onLogReferenceSelect={onLogReferenceSelect}
+        />
       ))}
       <div ref={scrollAnchorRef} />
     </div>

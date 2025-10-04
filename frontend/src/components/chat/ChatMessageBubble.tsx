@@ -2,10 +2,11 @@ import type { ComponentPropsWithoutRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import type { ChatMessage } from "../../types/chat";
+import type { ChatLogReference, ChatMessage } from "../../types/chat";
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
+  onLogReferenceSelect?: (reference: ChatLogReference) => void;
 }
 
 const formatTimestamp = (iso: string) => {
@@ -16,7 +17,7 @@ const formatTimestamp = (iso: string) => {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
-export const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
+export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessageBubbleProps) => {
   const isUser = message.role === "user";
   const isPending = message.status === "pending";
   const metadata = (message.metadata ?? {}) as {
@@ -29,16 +30,6 @@ export const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
       ? metadata.markdown
       : message.content;
   const jsonRaw = !isUser && typeof metadata.jsonPayload === "string" ? metadata.jsonPayload : null;
-
-  type LogReference = {
-    id?: string;
-    service_type?: string;
-    service_name?: string;
-    description?: string;
-    summary?: string;
-  };
-
-  const noop = () => undefined;
 
   const markdownComponents = {
     h1: (props: ComponentPropsWithoutRef<"h1">) => (
@@ -109,11 +100,10 @@ export const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
     hr: () => <hr className="my-6 border-t border-blue-500/20" />,
   };
 
-  let parsedJson: unknown = null;
-  let logReferences: LogReference[] = [];
+  let logReferences: ChatLogReference[] = [];
   if (jsonRaw && jsonRaw.trim().length > 0) {
     try {
-      parsedJson = JSON.parse(jsonRaw);
+      const parsedJson = JSON.parse(jsonRaw);
       if (
         parsedJson &&
         typeof parsedJson === "object" &&
@@ -121,7 +111,60 @@ export const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
       ) {
         const candidate = (parsedJson as Record<string, unknown>)["log_references"];
         if (Array.isArray(candidate)) {
-          logReferences = candidate.filter((item): item is LogReference => typeof item === "object" && item !== null);
+          logReferences = candidate
+            .map((item): ChatLogReference | null => {
+              if (typeof item !== "object" || item === null) {
+                return null;
+              }
+
+              const record = item as Record<string, unknown>;
+              const timeRangeValue = record.time_range;
+              const normalizedTimeRange =
+                typeof timeRangeValue === "object" && timeRangeValue !== null
+                  ? {
+                      start:
+                        typeof (timeRangeValue as Record<string, unknown>).start === "string"
+                          ? (timeRangeValue as Record<string, unknown>).start
+                          : undefined,
+                      end:
+                        typeof (timeRangeValue as Record<string, unknown>).end === "string"
+                          ? (timeRangeValue as Record<string, unknown>).end
+                          : undefined,
+                    }
+                  : undefined;
+
+              return {
+                id: typeof record.id === "string" ? record.id : undefined,
+                service_type:
+                  typeof record.service_type === "string"
+                    ? record.service_type
+                    : undefined,
+                service_name:
+                  typeof record.service_name === "string"
+                    ? record.service_name
+                    : undefined,
+                description:
+                  typeof record.description === "string"
+                    ? record.description
+                    : undefined,
+                severity:
+                  typeof record.severity === "string"
+                    ? record.severity
+                    : undefined,
+                count: typeof record.count === "number" ? record.count : undefined,
+                pages_analyzed:
+                  typeof record.pages_analyzed === "number"
+                    ? record.pages_analyzed
+                    : undefined,
+                filter: typeof record.filter === "string" ? record.filter : undefined,
+                summary:
+                  typeof record.summary === "string"
+                    ? record.summary
+                    : undefined,
+                time_range: normalizedTimeRange,
+              };
+            })
+            .filter((item): item is ChatLogReference => Boolean(item));
         }
       }
     } catch {
@@ -187,7 +230,7 @@ export const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
                         <button
                           type="button"
                           key={key}
-                          onClick={noop}
+                          onClick={() => onLogReferenceSelect?.(ref)}
                           className="group relative flex w-full flex-col gap-1 overflow-hidden rounded-xl border border-blue-500/25 bg-blue-500/15 px-4 py-3 text-left text-sm text-blue-100 transition-transform duration-200 hover:-translate-y-1 hover:border-blue-400/50 hover:bg-blue-500/20"
                         >
                           <div className="flex items-center justify-between">
