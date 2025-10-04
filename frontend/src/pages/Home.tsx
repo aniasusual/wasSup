@@ -6,7 +6,8 @@ import { EnhancedLogViewer } from "../components/EnhancedLogViewer";
 import ProviderFilters from "../components/Filters/ProviderFilters";
 import { useAuth } from "../contexts/Auth";
 import { useLogService } from "../services/logService";
-import type { GCPService, LogTab } from "../types/gcp";
+import type { FilterState, GCPService, LogTab } from "../types/gcp";
+import type { ChatLogReference } from "../types/chat";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
 import { ProjectArchitecturePrompt } from "../components/ProjectArchitecturePrompt";
@@ -242,7 +243,7 @@ export const Home = () => {
       id: tabId,
       title: tabTitle,
       serviceId: service.id,
-      isActive: true,
+      isActive: false,
       filters: {
         severity: [],
         resourceType: service.id, // Ensure resourceType is set to the service id
@@ -256,7 +257,10 @@ export const Home = () => {
       query: "",
       lastUpdated: new Date(),
     };
-    setTabs((prev) => [...prev, newTab]);
+    setTabs((prev) => [
+      ...prev.map((tab) => ({ ...tab, isActive: false })),
+      newTab,
+    ]);
     setActiveTabId(tabId);
     setSelectedService(service);
     // Initial fetch for the newly created tab
@@ -288,7 +292,7 @@ export const Home = () => {
       id: tabId,
       title,
       serviceId: log.serviceId || "unknown",
-      isActive: true,
+      isActive: false,
       filters: {
         severity: log.severity ? [log.severity] : [],
         resourceType: log.serviceId || "",
@@ -419,48 +423,137 @@ export const Home = () => {
   const currentTab = getCurrentTab();
 
   // Fetch logs for a specific tab, always applying global search and time filters
-  const fetchLogsForTab = async (tab: LogTab) => {
-    if (!selectedProvider || !selectedProject || !tab) return;
-    setIsLoading(true);
+  const fetchLogsForTab = useCallback(
+    async (tab: LogTab) => {
+      if (!selectedProvider || !selectedProject || !tab) return;
+      setIsLoading(true);
 
+      try {
+        const res = await fetchLogs({
+          projectId: selectedProject,
+          serviceId: tab.filters.resourceType,
+          filter: tab.query,
+          filters: {
+            ...tab.filters,
+            customQuery: pendingSearch.searchQuery,
+            customStartTime: pendingSearch.startDate,
+            customEndTime: pendingSearch.endDate,
+          },
+          pageSize: logCount,
+        });
+        const logs = Array.isArray(res?.logs) ? res.logs : [];
+        const nextToken =
+          typeof res?.nextPageToken === "string" ? res.nextPageToken : null;
+        setTabLogs((prev) => ({ ...prev, [tab.id]: logs }));
+        setTabNextTokens((prev) => ({
+          ...prev,
+          [tab.id]: nextToken,
+        }));
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("Authentication failed")) {
+          return; // Already handled by forceLogout
+        }
 
-    try {
-      const res = await fetchLogs({
-        projectId: selectedProject,
-        serviceId: tab.filters.resourceType,
-        filter: tab.query, // Use as filter if present
-        filters: {
-          ...tab.filters,
-          customQuery: pendingSearch.searchQuery, // Apply global search
-          customStartTime: pendingSearch.startDate, // Apply global start time
-          customEndTime: pendingSearch.endDate, // Apply global end time
-        },
-        pageSize: logCount, // Pass log count
-      });
-      const logs = Array.isArray(res?.logs) ? res.logs : [];
-      const nextToken =
-        typeof res?.nextPageToken === "string" ? res.nextPageToken : null;
-      setTabLogs((prev) => ({ ...prev, [tab.id]: logs }));
-      setTabNextTokens((prev) => ({
-        ...prev,
-        [tab.id]: nextToken,
-      }));
-    } catch (e) {
-      // Error fetching logs
+        setTabLogs((prev) => ({ ...prev, [tab.id]: [] }));
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
+        toast.error(`Failed to fetch logs: ${userFriendlyMessage}`);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [
+      selectedProvider,
+      selectedProject,
+      fetchLogs,
+      pendingSearch.searchQuery,
+      pendingSearch.startDate,
+      pendingSearch.endDate,
+      logCount,
+    ]
+  );
 
-      // Check if it's an authentication error
-      if (e instanceof Error && e.message.includes("Authentication failed")) {
-        return; // Already handled by forceLogout
+  const extractResourceTypeFromFilter = (filter?: string) => {
+    if (!filter) return "";
+    const match = filter.match(/resource\.type="([^"]+)"/i);
+    return match ? match[1] : "";
+  };
+
+  const handleLogReferenceSelect = useCallback(
+    (reference: ChatLogReference) => {
+      if (!selectedProvider) {
+        toast.error("Select a provider before opening log references.");
+        return;
       }
 
-      setTabLogs((prev) => ({ ...prev, [tab.id]: [] }));
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
-      toast.error(`Failed to fetch logs: ${userFriendlyMessage}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      if (!selectedProject) {
+        toast.error("Select a project before opening log references.");
+        return;
+      }
+
+      const resourceFromFilter = extractResourceTypeFromFilter(reference.filter);
+      const resourceType = resourceFromFilter || reference.service_type || "project_logs";
+      const filterString = reference.filter ?? "";
+      const startTime = reference.time_range?.start ?? "";
+      const endTime = reference.time_range?.end ?? "";
+      const hasCustomTimeRange = Boolean(startTime && endTime);
+
+      const existingTab = tabs.find(
+        (tab) => tab.query === filterString && tab.serviceId === resourceType
+      );
+      const tabId = existingTab?.id ?? `logref-${reference.id ?? Date.now()}`;
+      const titleParts = [reference.service_name, reference.severity]
+        .filter((part): part is string => Boolean(part && part.trim()))
+        .map((part) => part.trim());
+      const title = titleParts.length
+        ? `${titleParts.join(" · ")} logs`
+        : "Log Reference";
+
+      const filters: FilterState = {
+        severity: reference.severity ? [reference.severity] : [],
+        resourceType,
+        logType: [],
+        sourceLocation: "",
+        userAccount: "",
+        requestId: "",
+        timeRange: hasCustomTimeRange ? "custom" : "1h",
+        customQuery: filterString,
+        ...(hasCustomTimeRange
+          ? {
+              customStartTime: startTime,
+              customEndTime: endTime,
+            }
+          : {}),
+      };
+
+      const tabData: LogTab = {
+        id: tabId,
+        title,
+        serviceId: resourceType,
+        isActive: false,
+        filters,
+        query: filterString,
+        lastUpdated: new Date(),
+        type: "insight",
+        sourceMessageId: reference.id,
+      };
+
+      setTabs((prev) => {
+        const normalized = prev.map((tab) => ({ ...tab, isActive: false }));
+        if (existingTab) {
+          return normalized.map((tab) =>
+            tab.id === existingTab.id ? { ...tabData } : tab
+          );
+        }
+        return [...normalized, tabData];
+      });
+      setActiveTabId(tabId);
+      setSelectedService(undefined);
+
+      void fetchLogsForTab(tabData);
+    },
+    [selectedProvider, selectedProject, fetchLogsForTab, tabs]
+  );
 
   // Load more logs using nextPageToken for the active tab
   const loadMoreForActiveTab = useCallback(async () => {
@@ -801,6 +894,7 @@ export const Home = () => {
                     contextSummary={chatContextSummary}
                     queryAnalysis={chatQueryAnalysis}
                     queryHistory={chatQueryHistory}
+                    onLogReferenceSelect={handleLogReferenceSelect}
                   />
                 </div>
               </div>
@@ -914,9 +1008,9 @@ export const Home = () => {
                 {/* Chatbot Section */}
                 <div className="flex flex-col min-w-0">
                   <div className="glass-card gradient-border hover-card flex h-[70vh] min-h-0 flex-col animate-slide-up min-w-0 overflow-hidden">
-                  <ChatbotPanel
-                    messages={chatMessages}
-                    isStreaming={isChatStreaming}
+                    <ChatbotPanel
+                      messages={chatMessages}
+                      isStreaming={isChatStreaming}
                     error={chatError}
                     suggestions={chatSuggestions}
                     inputValue={chatDraft}
@@ -926,11 +1020,12 @@ export const Home = () => {
                     onReset={handleChatReset}
                     onToggleExpand={handleChatbotToggle}
                     isExpanded={false}
-                    plan={chatPlan}
-                    contextSummary={chatContextSummary}
-                    queryAnalysis={chatQueryAnalysis}
-                    queryHistory={chatQueryHistory}
-                  />
+                      plan={chatPlan}
+                      contextSummary={chatContextSummary}
+                      queryAnalysis={chatQueryAnalysis}
+                      queryHistory={chatQueryHistory}
+                      onLogReferenceSelect={handleLogReferenceSelect}
+                    />
                   </div>
                 </div>
               </div>

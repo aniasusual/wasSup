@@ -17,6 +17,22 @@ export interface ChatSuggestion {
   prompt: string;
 }
 
+export interface ChatLogReference {
+  id?: string;
+  service_type?: string;
+  service_name?: string;
+  description?: string;
+  severity?: string;
+  count?: number;
+  pages_analyzed?: number;
+  filter?: string;
+  summary?: string;
+  time_range?: {
+    start?: string;
+    end?: string;
+  };
+}
+
 export interface ChatSessionState {
   messages: ChatMessage[];
   isStreaming: boolean;
