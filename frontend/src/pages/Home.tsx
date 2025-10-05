@@ -657,7 +657,11 @@ export const Home = () => {
             <div className="flex items-center justify-between sm:justify-start">
               <div className="flex items-center space-x-2 sm:space-x-4">
                 <Link to="/" className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                  <img src="/logo.png" alt="Recce" className="w-40 h-40" />
+                  <img
+                    src="/logo.png"
+                    alt="Recce"
+                    className="h-20 sm:h-18 md:h-24 lg:h-30 xl:h-40 w-auto object-contain"
+                  />
                 </Link>
                 <div className="hidden sm:block h-6 w-px bg-gray-700"></div>
                 <div className="hidden sm:block">
