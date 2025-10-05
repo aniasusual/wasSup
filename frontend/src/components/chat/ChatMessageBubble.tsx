@@ -33,37 +33,25 @@ export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessage
 
   const markdownComponents = {
     h1: (props: ComponentPropsWithoutRef<"h1">) => (
-      <h1 className="text-xl font-semibold tracking-tight text-blue-100" {...props} />
+      <h1 className="text-lg font-semibold text-blue-200" {...props} />
     ),
     h2: (props: ComponentPropsWithoutRef<"h2">) => (
-      <h2 className="text-lg font-semibold text-blue-100 border-l-2 border-blue-500/50 pl-3" {...props} />
+      <h2 className="text-base font-semibold text-blue-100 mt-4" {...props} />
     ),
     h3: (props: ComponentPropsWithoutRef<"h3">) => (
-      <h3 className="text-base font-semibold text-blue-50 mt-4" {...props} />
+      <h3 className="text-sm font-semibold text-blue-100 mt-3" {...props} />
     ),
     p: (props: ComponentPropsWithoutRef<"p">) => (
-      <p
-        className="leading-relaxed text-[15px] text-slate-100/90"
-        {...props}
-      />
+      <p className="leading-relaxed text-[14px] text-slate-100/90" {...props} />
     ),
     ul: (props: ComponentPropsWithoutRef<"ul">) => (
-      <ul
-        className="space-y-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-100/90"
-        {...props}
-      />
+      <ul className="list-disc list-inside space-y-1 text-sm text-slate-100/90" {...props} />
     ),
     ol: (props: ComponentPropsWithoutRef<"ol">) => (
-      <ol
-        className="space-y-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-100/90 list-decimal list-inside"
-        {...props}
-      />
+      <ol className="list-decimal list-inside space-y-1 text-sm text-slate-100/90" {...props} />
     ),
     li: (props: ComponentPropsWithoutRef<"li">) => (
-      <li
-        className="relative pl-4 text-[15px] text-slate-100/90 before:absolute before:left-0 before:top-2.5 before:h-1.5 before:w-1.5 before:rounded-full before:bg-blue-300/70"
-        {...props}
-      />
+      <li className="text-[14px] text-slate-100/90" {...props} />
     ),
     strong: (props: ComponentPropsWithoutRef<"strong">) => (
       <strong className="text-blue-200 font-semibold" {...props} />
@@ -72,32 +60,18 @@ export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessage
       <em className="text-blue-100/80" {...props} />
     ),
     blockquote: (props: ComponentPropsWithoutRef<"blockquote">) => (
-      <blockquote
-        className="border-l-4 border-blue-500/60 bg-blue-500/10 text-blue-100/90 italic px-4 py-3 rounded-r-xl"
-        {...props}
-      />
+      <blockquote className="border-l-2 border-blue-500/50 pl-3 text-blue-100 italic" {...props} />
     ),
     code: (props: ComponentPropsWithoutRef<"code">) => (
-      <code
-        className="rounded-md bg-slate-900/90 px-2 py-[3px] text-[12px] text-blue-200"
-        {...props}
-      />
+      <code className="rounded bg-slate-900/80 px-1.5 py-0.5 text-xs text-blue-200" {...props} />
     ),
     pre: (props: ComponentPropsWithoutRef<"pre">) => (
-      <pre
-        className="overflow-x-auto rounded-xl border border-white/10 bg-[#05060f]/95 p-4 text-[13px] leading-relaxed text-blue-100"
-        {...props}
-      />
+      <pre className="overflow-x-auto rounded-lg bg-slate-900/90 p-3 text-xs text-blue-100" {...props} />
     ),
     a: (props: ComponentPropsWithoutRef<"a">) => (
-      <a
-        className="text-sky-300 underline decoration-dotted underline-offset-4 transition-colors hover:text-sky-200"
-        target="_blank"
-        rel="noreferrer"
-        {...props}
-      />
+      <a className="text-sky-300 underline underline-offset-2 hover:text-sky-200" target="_blank" rel="noreferrer" {...props} />
     ),
-    hr: () => <hr className="my-6 border-t border-blue-500/20" />,
+    hr: () => <hr className="my-4 border-t border-slate-700/60" />,
   };
 
   let logReferences: ChatLogReference[] = [];
@@ -175,15 +149,10 @@ export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessage
   const containerWidthClass = isUser
     ? "max-w-[88%] sm:max-w-[75%]"
     : "w-full";
-  const bubbleBase = "relative rounded-3xl px-5 py-4 text-sm transition-all duration-200";
-  const assistantTone =
-    "bg-slate-950/85 text-slate-100 border border-white/10 shadow-[0_16px_36px_rgba(8,18,36,0.45)] backdrop-blur-sm";
-  const userTone =
-    "bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 text-white shadow-[0_12px_24px_rgba(37,99,235,0.45)]";
+  const bubbleBase = "relative rounded-2xl px-4 py-4 text-sm transition-colors";
+  const assistantTone = "bg-gray-900/85 text-slate-100 border border-gray-800";
+  const userTone = "bg-blue-600 text-white";
   const bubbleTone = isUser ? userTone : assistantTone;
-  const interactiveTone = isUser
-    ? "hover:-translate-y-0.5"
-    : "hover:-translate-y-0.5 hover:border-blue-400/40";
   const pendingClass = isPending && !isUser ? " animate-pulse" : "";
   const bubbleWidthClass = isUser ? "" : " w-full";
   const metaClass = `mt-2 text-[10px] uppercase tracking-wide ${
@@ -193,7 +162,7 @@ export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessage
   return (
     <div className={wrapperClass}>
       <div className={containerWidthClass}>
-        <div className={`${bubbleBase} ${bubbleTone} ${interactiveTone}${pendingClass}${bubbleWidthClass}`}>
+        <div className={`${bubbleBase} ${bubbleTone}${pendingClass}${bubbleWidthClass}`}>
           {isPending ? (
             <span className="inline-flex gap-1">
               <span className="w-2 h-2 rounded-full bg-gray-300/80 animate-bounce" />
@@ -215,11 +184,11 @@ export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessage
                 </div>
               )}
               {logReferences.length > 0 && (
-                <div className="border-t border-white/10 pt-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-300/80">
+                <div className="border-t border-gray-800 pt-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-200/80">
                     Relevant logs
                   </p>
-                  <div className="mt-3 flex flex-wrap gap-3">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {logReferences.map((ref, index) => {
                       const key = ref.id ?? `log-ref-${index}`;
                       const title = ref.service_name ?? ref.description ?? key;
@@ -231,13 +200,13 @@ export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessage
                           type="button"
                           key={key}
                           onClick={() => onLogReferenceSelect?.(ref)}
-                          className="group relative flex w-full flex-col gap-1 overflow-hidden rounded-xl border border-blue-500/25 bg-blue-500/15 px-4 py-3 text-left text-sm text-blue-100 transition-transform duration-200 hover:-translate-y-1 hover:border-blue-400/50 hover:bg-blue-500/20"
+                          className="flex w-full flex-col gap-1 rounded-xl border border-blue-500/25 bg-blue-500/10 px-4 py-3 text-left text-sm text-blue-100 transition-colors hover:border-blue-400/50 hover:bg-blue-500/15"
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-[15px] text-blue-50">
                               {title}
                             </span>
-                            <span className="rounded-full border border-blue-300/40 bg-blue-500/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-50">
+                            <span className="rounded-full border border-blue-300/40 bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-50">
                               {badge}
                             </span>
                           </div>
