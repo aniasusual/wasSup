@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 from typing import Any, Optional, Dict, List, Literal
 from uuid import uuid4
 
@@ -118,6 +119,20 @@ def _normalize_role(role: Optional[str]) -> Optional[str]:
     return None
 
 
+def _extract_markdown_and_json(raw_content: str) -> tuple[str, Optional[str]]:
+    pattern = re.compile(r"```json\s*([\s\S]*?)```", re.IGNORECASE)
+    match = pattern.search(raw_content)
+    if not match:
+        return raw_content.strip(), None
+
+    json_payload = match.group(1).strip()
+    before = raw_content[: match.start()].strip()
+    after = raw_content[match.end() :].strip()
+    markdown_parts = [part for part in (before, after) if part]
+    markdown = "\n\n".join(markdown_parts)
+    return (markdown or raw_content.strip(), json_payload)
+
+
 def _message_to_chat_message(
     message: Message,
     session_id: str,
@@ -128,14 +143,23 @@ def _message_to_chat_message(
         return None
 
     timestamp = _timestamp_to_datetime(message.created_at) or datetime.now(timezone.utc)
-    content = message.get_content_string() if hasattr(message, "get_content_string") else ""
-    raw_content = content
+    raw_content = message.get_content_string() if hasattr(message, "get_content_string") else ""
+    content = raw_content
+    metadata = message.model_dump(mode="json", exclude_none=True)
     if role == "user" and content:
         delimiter = "## User Query"
         if delimiter in content:
             _, after = content.split(delimiter, 1)
             content = after.lstrip("\n\r ") or content
-    metadata = message.model_dump(mode="json", exclude_none=True)
+    elif role == "assistant" and content:
+        markdown, json_payload = _extract_markdown_and_json(content)
+        if markdown:
+            content = markdown
+        if json_payload:
+            metadata.setdefault("jsonPayload", json_payload)
+        if markdown and markdown != raw_content:
+            metadata.setdefault("markdown", markdown)
+
     if raw_content and metadata is not None:
         metadata.setdefault("rawContent", raw_content)
 
