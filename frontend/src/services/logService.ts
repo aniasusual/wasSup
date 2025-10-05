@@ -240,8 +240,7 @@ export const useLogService = () => {
             throw new Error(errorMessage);
         }
 
-        // If backend fails, throw the error
-        throw error;
+        throw new Error("Backend did not return logs.");
     };
 
     return {

@@ -126,6 +126,9 @@ export const Home = () => {
   });
 
   const {
+    sessionId: activeChatSessionId,
+    sessions: chatSessions,
+    isLoadingSessions: isChatSessionsLoading,
     messages: chatMessages,
     isStreaming: isChatStreaming,
     error: chatError,
@@ -134,11 +137,26 @@ export const Home = () => {
     contextSummary: chatContextSummary,
     queryAnalysis: chatQueryAnalysis,
     queryHistory: chatQueryHistory,
+    loadSession,
     sendMessage: sendChatMessage,
     runSuggestion: runChatSuggestion,
     resetChat,
   } = chatSession;
   const [chatDraft, setChatDraft] = useState("");
+
+  const handleSessionSelect = useCallback(
+    async (targetSessionId: string) => {
+      try {
+        await loadSession(targetSessionId);
+        setChatDraft("");
+      } catch (err) {
+        const detail =
+          err instanceof Error ? err.message : "Failed to load the selected session.";
+        toast.error(detail);
+      }
+    },
+    [loadSession]
+  );
 
   // Resizable splitter state for logs/chat widths (xl+ screens)
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -266,63 +284,6 @@ export const Home = () => {
     // Initial fetch for the newly created tab
     void fetchLogsForTab(newTab);
   };
-
-  // Create an insight tab when clicking a relevant log from chat
-  const handleOpenInsightFromChat = ({ sourceMessageId, log }: any) => {
-    const tabId = `insight-${log.id}-${Date.now()}`;
-
-    // Create a more descriptive title based on log content
-    let title = `🔍 AI Insight`;
-    if (log.severity === "ERROR") {
-      title = `🚨 Error Analysis`;
-    } else if (log.severity === "WARNING") {
-      title = `⚠️ Warning Investigation`;
-    } else if (log.serviceId) {
-      title = `🔍 ${log.serviceId} Analysis`;
-    }
-
-    // Build a custom query to find related logs
-    const customQuery = log.traceId
-      ? `traceId="${log.traceId}"`
-      : log.insertId
-      ? `insertId="${log.insertId}"`
-      : `resource.type="${log.serviceId}" AND severity="${log.severity}"`;
-
-    const newTab: LogTab = {
-      id: tabId,
-      title,
-      serviceId: log.serviceId || "unknown",
-      isActive: false,
-      filters: {
-        severity: log.severity ? [log.severity] : [],
-        resourceType: log.serviceId || "",
-        logType: [],
-        sourceLocation: "",
-        userAccount: "",
-        requestId: log.traceId || "",
-        timeRange: "custom",
-        customQuery,
-        customStartTime: "",
-        customEndTime: "",
-      },
-      query: customQuery,
-      lastUpdated: new Date(),
-      type: "insight",
-      sourceMessageId,
-      primaryLogId: log.insertId || log.id,
-    };
-
-    setTabs((prev) => [
-      ...prev.map((t) => ({ ...t, isActive: false })),
-      newTab,
-    ]);
-    setActiveTabId(tabId);
-    setSelectedService(undefined);
-
-    // Fetch logs for the insight tab
-    void fetchLogsForTab(newTab);
-  };
-
 
   // Update active tab when changed
   useEffect(() => {
@@ -894,6 +855,10 @@ export const Home = () => {
                     contextSummary={chatContextSummary}
                     queryAnalysis={chatQueryAnalysis}
                     queryHistory={chatQueryHistory}
+                    sessions={chatSessions}
+                    activeSessionId={activeChatSessionId}
+                    isLoadingSessions={isChatSessionsLoading}
+                    onSessionSelect={handleSessionSelect}
                     onLogReferenceSelect={handleLogReferenceSelect}
                   />
                 </div>
@@ -1011,19 +976,23 @@ export const Home = () => {
                     <ChatbotPanel
                       messages={chatMessages}
                       isStreaming={isChatStreaming}
-                    error={chatError}
-                    suggestions={chatSuggestions}
-                    inputValue={chatDraft}
-                    onInputChange={setChatDraft}
-                    onSend={handleChatSend}
-                    onSuggestionSelect={handleChatSuggestionSelect}
-                    onReset={handleChatReset}
-                    onToggleExpand={handleChatbotToggle}
-                    isExpanded={false}
+                      error={chatError}
+                      suggestions={chatSuggestions}
+                      inputValue={chatDraft}
+                      onInputChange={setChatDraft}
+                      onSend={handleChatSend}
+                      onSuggestionSelect={handleChatSuggestionSelect}
+                      onReset={handleChatReset}
+                      onToggleExpand={handleChatbotToggle}
+                      isExpanded={false}
                       plan={chatPlan}
                       contextSummary={chatContextSummary}
                       queryAnalysis={chatQueryAnalysis}
                       queryHistory={chatQueryHistory}
+                      sessions={chatSessions}
+                      activeSessionId={activeChatSessionId}
+                      isLoadingSessions={isChatSessionsLoading}
+                      onSessionSelect={handleSessionSelect}
                       onLogReferenceSelect={handleLogReferenceSelect}
                     />
                   </div>

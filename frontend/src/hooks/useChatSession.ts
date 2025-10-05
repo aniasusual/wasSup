@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "../contexts/Auth";
-import { sendChatTurn } from "../services/chatService";
+import { fetchChatSession, listChatSessions, sendChatTurn } from "../services/chatService";
 import type {
   ChatMessage,
   ChatSuggestion,
@@ -9,6 +9,7 @@ import type {
   InvestigationPlan,
   QueryUnderstandingResult,
   QueryHistoryEntry,
+  ChatSessionSummary,
 } from "../types/chat";
 
 export interface UseChatSessionConfig {
@@ -23,6 +24,8 @@ export interface SendMessageOptions {
 
 type UseChatSessionResult = {
   sessionId: string | null;
+  sessions: ChatSessionSummary[];
+  isLoadingSessions: boolean;
   messages: ChatMessage[];
   isStreaming: boolean;
   error: string | null;
@@ -31,6 +34,8 @@ type UseChatSessionResult = {
   contextSummary: string;
   queryAnalysis: QueryUnderstandingResult | null;
   queryHistory: QueryHistoryEntry[];
+  loadSession: (sessionId: string) => Promise<void>;
+  refreshSessions: () => Promise<void>;
   sendMessage: (content: string, options?: SendMessageOptions) => Promise<void>;
   runSuggestion: (prompt: string, options?: SendMessageOptions) => Promise<void>;
   resetChat: () => void;
@@ -68,14 +73,6 @@ const buildIntroMessage = (): ChatMessage => ({
   status: "sent",
   metadata: {},
 });
-
-const toSuggestionLabel = (text: string, index: number) => {
-  const trimmed = text.trim();
-  if (trimmed.length <= 40) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, 37)}… (${index + 1})`;
-};
 
 const extractStructuredReply = (rawContent: string) => {
   const fencePattern = /```json\s*([\s\S]*?)```/i;
@@ -124,12 +121,23 @@ const mapReplyToMessage = (reply: ChatTurnResponse["reply"]): ChatMessage => {
   };
 };
 
+const ensureMessageShape = (message: ChatMessage, fallbackId: string): ChatMessage => ({
+  id: message.id ?? fallbackId,
+  role: message.role,
+  content: message.content,
+  timestamp: message.timestamp,
+  status: message.status ?? "sent",
+  metadata: message.metadata ?? {},
+});
+
 export const useChatSession = (
   config: UseChatSessionConfig = {}
 ): UseChatSessionResult => {
   const { token, forceLogout } = useAuth();
 
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([buildIntroMessage()]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,7 +171,71 @@ export const useChatSession = (
     []
   );
 
+  const refreshSessions = useCallback(async () => {
+    if (!token) {
+      setSessions([]);
+      return;
+    }
+
+    setIsLoadingSessions(true);
+    try {
+      const sessionList = await listChatSessions(token);
+      setSessions(sessionList);
+    } catch (err) {
+      console.error("Failed to load chat sessions", err);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      setSessions([]);
+      return;
+    }
+
+    refreshSessions().catch(() => {
+      /* handled in refreshSessions */
+    });
+  }, [token, refreshSessions]);
+
   const effectiveSuggestions = useMemo(() => suggestions, [suggestions]);
+
+  const loadSession = useCallback(
+    async (targetSessionId: string) => {
+      if (!token) {
+        const detail = "You must be signed in to view previous sessions.";
+        setError(detail);
+        throw new Error(detail);
+      }
+
+      setError(null);
+      try {
+        const session = await fetchChatSession(targetSessionId, token);
+        const normalizedMessages = session.messages.map((message, index) =>
+          ensureMessageShape(message, `${session.sessionId}-${index}`)
+        );
+
+        setMessages(
+          normalizedMessages.length > 0 ? normalizedMessages : [buildIntroMessage()]
+        );
+        setSessionId(session.sessionId);
+        setIsStreaming(false);
+        setLastPlan(null);
+        setContextSummary("");
+        setQueryAnalysis(null);
+        setQueryHistory([]);
+      } catch (err) {
+        const detail =
+          err instanceof Error
+            ? err.message
+            : "Unable to load conversation history.";
+        setError(detail);
+        throw (err instanceof Error ? err : new Error(detail));
+      }
+    },
+    [token]
+  );
 
   const sendMessage = useCallback(
     async (content: string, options?: SendMessageOptions) => {
@@ -177,13 +249,15 @@ export const useChatSession = (
         return;
       }
 
-      const effectiveProjectId = sessionId
-        ? undefined
-        : options?.projectId ?? projectIdRef.current;
+      const effectiveProjectId = options?.projectId ?? projectIdRef.current;
 
-      if (!sessionId && !effectiveProjectId) {
+      if (!effectiveProjectId) {
         setError("Select a project to anchor the investigation before chatting.");
         return;
+      }
+
+      if (effectiveProjectId) {
+        projectIdRef.current = effectiveProjectId;
       }
 
       const effectiveContext = {
@@ -217,7 +291,7 @@ export const useChatSession = (
 
 
       try {
-        const response = await sendChatTurn(
+        const response: ChatTurnResponse = await sendChatTurn(
           {
             message: trimmed,
             sessionId: sessionId ?? undefined,
@@ -226,9 +300,21 @@ export const useChatSession = (
           },
           token
         );
-        console.log("Sending chat turn response", response);
 
-        updateMessageById(assistantMessageId, () => mapReplyToMessage(response));
+        if (typeof response.sessionId === "string" && response.sessionId.trim()) {
+          setSessionId(response.sessionId);
+        }
+
+        updateMessageById(assistantMessageId, () => mapReplyToMessage(response.reply));
+
+        setLastPlan(response.plan ?? null);
+        setContextSummary(response.contextSummary ?? "");
+        setQueryAnalysis(response.queryAnalysis ?? null);
+        setQueryHistory(Array.isArray(response.queryHistory) ? response.queryHistory : []);
+
+        refreshSessions().catch(() => {
+          /* handled elsewhere */
+        });
       } catch (err: unknown) {
         const detail =
           err instanceof Error ? err.message : "Unexpected error contacting the assistant.";
@@ -248,7 +334,15 @@ export const useChatSession = (
         setIsStreaming(false);
       }
     },
-    [appendMessages, forceLogout, isStreaming, sessionId, token, updateMessageById]
+    [
+      appendMessages,
+      forceLogout,
+      isStreaming,
+      refreshSessions,
+      sessionId,
+      token,
+      updateMessageById,
+    ]
   );
 
   const runSuggestion = useCallback(
@@ -272,6 +366,8 @@ export const useChatSession = (
 
   return {
     sessionId,
+    sessions,
+    isLoadingSessions,
     messages,
     isStreaming,
     error,
@@ -280,6 +376,8 @@ export const useChatSession = (
     contextSummary,
     queryAnalysis,
     queryHistory,
+    loadSession,
+    refreshSessions,
     sendMessage,
     runSuggestion,
     resetChat,

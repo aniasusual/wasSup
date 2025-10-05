@@ -8,6 +8,7 @@ import type {
   QueryHistoryEntry,
   FilterSuggestion,
   ChatLogReference,
+  ChatSessionSummary,
 } from "../../types/chat";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessageList } from "./ChatMessageList";
@@ -33,6 +34,10 @@ interface ChatbotPanelProps {
   queryHistory?: QueryHistoryEntry[];
   onApplyFilterSuggestion?: (suggestion: FilterSuggestion) => void;
   onLogReferenceSelect?: (reference: ChatLogReference) => void;
+  sessions?: ChatSessionSummary[];
+  activeSessionId?: string | null;
+  isLoadingSessions?: boolean;
+  onSessionSelect?: (sessionId: string) => void;
 }
 
 export const ChatbotPanel = ({
@@ -53,6 +58,10 @@ export const ChatbotPanel = ({
   queryHistory = [],
   onApplyFilterSuggestion,
   onLogReferenceSelect,
+  sessions = [],
+  activeSessionId = null,
+  isLoadingSessions = false,
+  onSessionSelect,
 }: ChatbotPanelProps) => {
   const hasInsights = useMemo(() => {
     if (!queryAnalysis) return false;
@@ -70,6 +79,10 @@ export const ChatbotPanel = ({
         isStreaming={isStreaming}
         isExpanded={isExpanded}
         onReset={onReset}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        isLoadingSessions={isLoadingSessions}
+        onSessionSelect={onSessionSelect}
         onToggleExpand={onToggleExpand}
       />
 

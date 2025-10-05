@@ -95,16 +95,13 @@ export const ChatMessageBubble = ({ message, onLogReferenceSelect }: ChatMessage
               const timeRangeValue = record.time_range;
               const normalizedTimeRange =
                 typeof timeRangeValue === "object" && timeRangeValue !== null
-                  ? {
-                      start:
-                        typeof (timeRangeValue as Record<string, unknown>).start === "string"
-                          ? (timeRangeValue as Record<string, unknown>).start
-                          : undefined,
-                      end:
-                        typeof (timeRangeValue as Record<string, unknown>).end === "string"
-                          ? (timeRangeValue as Record<string, unknown>).end
-                          : undefined,
-                    }
+                  ? (() => {
+                      const range = timeRangeValue as { start?: unknown; end?: unknown };
+                      return {
+                        start: typeof range.start === "string" ? range.start : undefined,
+                        end: typeof range.end === "string" ? range.end : undefined,
+                      };
+                    })()
                   : undefined;
 
               return {
