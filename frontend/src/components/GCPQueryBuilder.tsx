@@ -37,7 +37,7 @@ interface GCPQueryBuilderProps {
 
 interface ApiStatus {
   [key: string]: {
-    status: "loading" | "success" | "error" | "fallback";
+    status: "loading" | "success" | "error";
     message?: string;
     endpoint?: string;
   };
@@ -164,17 +164,8 @@ const parseGCPQuery = (query: string): ParsedQuery | null => {
       }
     }
 
-    console.log("Parsed query result:", {
-      originalQuery: query,
-      parsedResourceType: result.resourceType,
-      parsedResourceLabels: result.resourceLabels,
-      parsedAdditionalQueries: result.additionalQueries,
-      lines: lines,
-    });
-
     return result.resourceType ? result : null;
   } catch (error) {
-    console.error("Error parsing query:", error);
     return null;
   }
 };
@@ -236,7 +227,7 @@ const SearchableSelect: React.FC<{
           text-slate-200 text-sm backdrop-blur-sm
           hover:border-slate-600 hover:bg-slate-800/70
           focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500
-          transition-all duration-200 ease-in-out
+          transition-all duration-200 ease-in-out active:scale-[0.98]
           ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}
           ${isOpen ? "border-blue-500 ring-2 ring-blue-500/20" : ""}
         `}
@@ -257,7 +248,7 @@ const SearchableSelect: React.FC<{
       </button>
 
       {isOpen && !isLoading && (
-        <div className="absolute z-50 w-full mt-2 bg-slate-800/95 backdrop-blur-lg border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute z-50 w-full mt-2 bg-slate-800/95 backdrop-blur-lg border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden animate-slide-down">
           <div className="p-3 border-b border-slate-700/50">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -413,7 +404,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
   // Add debug message with useCallback to prevent recreation
   const addDebugMessage = useCallback((message: string) => {
-    console.log(`[QueryBuilder] ${message}`);
     setDebugInfo((prev) => [
       ...prev.slice(-20),
       `${new Date().toLocaleTimeString()}: ${message}`,
@@ -461,7 +451,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
       token: string
     ) => {
       try {
-        console.log(`Fetching options for ${resourceType}.${label}`, {
+        console.log("Fetching options from backend:", {
           resourceType,
           label,
           projectId,
@@ -502,17 +492,17 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           options = response.data.options;
         } else if (response.data.options) {
           // If options is not an array, try to convert it
-          console.warn(
+          console.log(
             `Options not an array for ${resourceType}.${label}:`,
             response.data.options
           );
           options = [];
         } else {
-          // Fallback: check if the response data itself is an array
+          // Check if the response data itself is an array
           if (Array.isArray(response.data)) {
             options = response.data;
           } else {
-            console.error(
+            console.log(
               `Unexpected response format for ${resourceType}.${label}:`,
               response.data
             );
@@ -534,7 +524,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         );
 
         if (validOptions.length === 0 && response.data.message) {
-          console.warn(
+          console.log(
             `No options returned for ${resourceType}.${label}: ${response.data.message}`
           );
         }
@@ -643,7 +633,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         const errorMessage = err.message || "Unknown error occurred";
 
         addDebugMessage(`Error fetching options for ${label}: ${errorMessage}`);
-        console.error(`fetchDropdownOptions error for ${label}:`, err);
 
         setLabelOptions((prev) => ({ ...prev, [label]: [] }));
         setLabelLoading((prev) => ({ ...prev, [label]: false }));
@@ -875,13 +864,13 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     onQuerySubmit(queryPreview);
   }, [resourceType, queryPreview, onQuerySubmit]);
 
-  // Clear all selections
-  const handleClearAll = useCallback(() => {
-    setResourceLabels({});
-    setAdditionalQueries([]);
-    setError("");
-    setDependencyValues({});
-  }, []);
+  // Clear all selections (currently unused)
+  // const handleClearAll = useCallback(() => {
+  //   setResourceLabels({});
+  //   setAdditionalQueries([]);
+  //   setError("");
+  //   setDependencyValues({});
+  // }, []);
 
   // Handle manual query parsing
   const handleParseManualQuery = useCallback(() => {
@@ -938,18 +927,17 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
     toast.success(`Successfully parsed query for ${parsed.resourceType}`);
   }, [manualQuery, tab, onUpdateTab, addDebugMessage]);
 
-  // Copy query to clipboard
-  const handleCopyQuery = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(queryPreview);
-      addDebugMessage("Query copied to clipboard");
-      toast.success("Query copied to clipboard");
-    } catch (error) {
-      console.error("Failed to copy query:", error);
-      addDebugMessage("Failed to copy query to clipboard");
-      toast.error("Failed to copy query to clipboard");
-    }
-  }, [queryPreview, addDebugMessage]);
+  // Copy query to clipboard (currently unused)
+  // const handleCopyQuery = useCallback(async () => {
+  //   try {
+  //     await navigator.clipboard.writeText(queryPreview);
+  //     addDebugMessage("Query copied to clipboard");
+  //     toast.success("Query copied to clipboard");
+  //   } catch (error) {
+  //     addDebugMessage("Failed to copy query to clipboard");
+  //     toast.error("Failed to copy query to clipboard");
+  //   }
+  // }, [queryPreview, addDebugMessage]);
 
   // Get status icon for API calls
   const getStatusIcon = (status: string) => {
@@ -960,8 +948,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
         return <CheckCircle className="w-3 h-3 text-emerald-400" />;
       case "error":
         return <XCircle className="w-3 h-3 text-red-400" />;
-      case "fallback":
-        return <AlertCircle className="w-3 h-3 text-amber-400" />;
       default:
         return null;
     }
@@ -970,7 +956,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
   // Debug functions
   const testApiConnectivity = async () => {
     if (!token || !projectId) {
-      console.error("Missing token or projectId for testing");
       return;
     }
 
@@ -994,7 +979,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
     for (const testCase of testCases) {
       try {
-        console.log(`Testing ${testCase.name}...`);
         const options = await fetchOptionsFromBackend(
           testCase.resourceType,
           testCase.label,
@@ -1007,7 +991,6 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
           options.slice(0, 3)
         );
       } catch (error: any) {
-        console.error(`❌ ${testCase.name} failed:`, error.message);
       }
     }
   };
@@ -1124,7 +1107,7 @@ export const GCPQueryBuilder: React.FC<GCPQueryBuilderProps> = ({
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-        <div className="bg-slate-900/95 backdrop-blur-lg border border-slate-700/50 rounded-2xl shadow-2xl p-6 w-[600px] max-w-[90vw] mx-4 max-h-[80vh] overflow-y-auto">
+        <div className="bg-slate-900/95 backdrop-blur-lg border border-slate-700/50 rounded-2xl shadow-2xl p-6 w-[600px] max-w-[90vw] mx-4 max-h-[80vh] overflow-y-auto animate-fade-in">
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-slate-200 mb-2">
               Paste GCP Log Query
@@ -1197,7 +1180,7 @@ severity>=DEFAULT`}
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-        <div className="bg-slate-900/95 backdrop-blur-lg border border-slate-700/50 rounded-2xl shadow-2xl p-6 w-96 max-w-md mx-4">
+        <div className="bg-slate-900/95 backdrop-blur-lg border border-slate-700/50 rounded-2xl shadow-2xl p-6 w-96 max-w-md mx-4 animate-fade-in">
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-slate-200 mb-2">
               Add Query Condition
@@ -1318,6 +1301,9 @@ severity>=DEFAULT`}
                 placeholder={`Enter ${label}`}
               />
             )}
+            {isLoading && (
+              <div className="mt-2 h-3 rounded-md skeleton" />
+            )}
           </div>
         </div>
       );
@@ -1335,44 +1321,88 @@ severity>=DEFAULT`}
     );
   }
 
+  // Derived UI state for progress and layout
+  const currentMapping =
+    GCP_RESOURCE_MAPPINGS[resourceType as keyof typeof GCP_RESOURCE_MAPPINGS];
+  const totalLabels = currentMapping?.labels?.length || 0;
+  const filledLabels = totalLabels
+    ? currentMapping.labels.filter((l: string) => !!resourceLabels[l])?.length || 0
+    : 0;
+  const progressPct = totalLabels ? Math.round((filledLabels / totalLabels) * 100) : 0;
+
   return (
-    <div className="w-full max-w-6xl mx-auto mt-8 mb-8 p-8 bg-gradient-to-br from-slate-900/90 to-slate-800/90 border border-slate-700/50 rounded-3xl shadow-2xl backdrop-blur-lg">
+    <div className="w-full max-w-7xl mx-auto mt-8 mb-8 p-6 sm:p-8 bg-gradient-to-br from-slate-950/90 to-slate-900/90 border border-slate-800/60 rounded-3xl shadow-2xl backdrop-blur-lg animate-fade-in">
+      {/* Lightweight local animations and skeleton styles */}
+      <style>{`
+        @keyframes fadeInScale { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        .animate-fade-in { animation: fadeInScale 180ms ease-out; }
+        .animate-slide-down { animation: slideDown 160ms ease-out; }
+        .skeleton { background: linear-gradient(110deg, rgba(148,163,184,0.10) 8%, rgba(148,163,184,0.20) 18%, rgba(148,163,184,0.10) 33%);
+                    background-size: 200% 100%; animation: shimmer 1.1s linear infinite; }
+      `}</style>
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
+      <div className="mb-6 sm:mb-8">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold text-slate-100 mb-2">
-              {isProjectLogs
-                ? "Project Logs Query Builder"
-                : "GCP Query Builder"}
+            <h2 className="text-2xl font-semibold text-slate-100">
+              {isProjectLogs ? "Project Logs" : "GCP Query Builder"}
             </h2>
-            <p className="text-slate-400">
+            <p className="text-slate-400 text-sm mt-1">
               {isProjectLogs
-                ? "Build queries to filter logs across all services in your project"
-                : "Build queries to filter logs from specific GCP services"}
+                ? "Filter logs across all services in your project."
+                : "Build precise queries for specific GCP services."}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="inline-flex items-center p-1 rounded-xl bg-slate-800/60 border border-slate-700/60">
+              <button
+                className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
+                  !showManualQuery ? "bg-slate-700/60 text-slate-100" : "text-slate-300"
+                }`}
+                onClick={() => setShowManualQuery(false)}
+              >
+                Guided
+              </button>
+              <button
+                className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
+                  showManualQuery ? "bg-slate-700/60 text-slate-100" : "text-slate-300"
+                }`}
+                onClick={() => setShowManualQuery(true)}
+              >
+                Raw Query
+              </button>
+            </div>
             <button
-              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg transition-all duration-200"
+              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all duration-200 active:scale-[0.98]"
               onClick={() => setShowDebug(!showDebug)}
               title="Toggle debug info"
             >
               <Bug className="w-4 h-4" />
             </button>
-            <button
-              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg transition-all duration-200"
-              onClick={() => setShowManualQuery(!showManualQuery)}
-              title="Toggle manual query input"
-            >
-              <FileText className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </div>
 
+      {/* Progress */}
+      {!isProjectLogs && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-slate-400">Labels completion</span>
+            <span className="text-xs text-slate-400">{filledLabels}/{totalLabels}</span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-800/80 border border-slate-800/60 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Resource Type Selection */}
-      <div className="mb-8">
+      <div className="mb-8 p-5 rounded-2xl border border-slate-800/60 bg-slate-900/40">
         <div className="grid grid-cols-12 gap-4 items-center">
           <div className="col-span-4">
             <label className="text-sm font-medium text-slate-300">
@@ -1383,7 +1413,7 @@ severity>=DEFAULT`}
           </div>
           <div className="col-span-8">
             {isProjectLogs ? (
-              <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-slate-200 text-sm backdrop-blur-sm">
+              <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/40 border border-slate-700/50 rounded-xl text-slate-200 text-sm">
                 <AlertCircle className="w-4 h-4 text-amber-400" />
                 <span>
                   All services are being queried. Resource type selection is
@@ -1403,12 +1433,12 @@ severity>=DEFAULT`}
       </div>
 
       {/* Resource Labels */}
-      <div className="mb-8">
+      <div className="mb-8 p-5 rounded-2xl border border-slate-800/60 bg-slate-900/40">
         <h3 className="text-lg font-semibold text-slate-200 mb-6">
           Resource Labels
         </h3>
         {isProjectLogs ? (
-          <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/30 border border-slate-700/50 rounded-xl text-slate-300 text-sm">
+          <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/40 border border-slate-700/50 rounded-xl text-slate-300 text-sm">
             <AlertCircle className="w-4 h-4 text-amber-400" />
             <span>
               No resource labels needed for project-wide logs. All services will
@@ -1416,7 +1446,7 @@ severity>=DEFAULT`}
             </span>
           </div>
         ) : (
-          renderLabelDropdowns()
+          <div className="space-y-5 animate-fade-in">{renderLabelDropdowns()}</div>
         )}
       </div>
 
@@ -1545,7 +1575,7 @@ severity>=DEFAULT`}
       {/* Action Buttons */}
       <div className="flex items-center gap-4 mb-8">
         {isProjectLogs ? (
-          <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/30 border border-slate-700/50 rounded-xl text-slate-300 text-sm">
+          <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/40 border border-slate-700/50 rounded-xl text-slate-300 text-sm">
             <AlertCircle className="w-4 h-4 text-amber-400" />
             <span>
               Add conditions to filter logs across all services in the project.
@@ -1553,7 +1583,7 @@ severity>=DEFAULT`}
           </div>
         ) : (
           <button
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium active:scale-[0.98]"
             onClick={() => setShowAddQuery(true)}
             type="button"
           >
@@ -1562,7 +1592,16 @@ severity>=DEFAULT`}
         )}
 
         <button
-          className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-slate-700/60 hover:bg-slate-700 text-slate-100 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium active:scale-[0.98]"
+          onClick={() => setShowManualQuery(true)}
+          type="button"
+          title="Paste a complete GCP Logging query"
+        >
+          <FileText className="w-4 h-4" /> Paste Query
+        </button>
+
+        <button
+          className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 ease-in-out font-medium active:scale-[0.98]"
           onClick={() => onQuerySubmit(queryPreview)}
           type="button"
         >
@@ -1571,7 +1610,7 @@ severity>=DEFAULT`}
       </div>
 
       {/* Query Preview */}
-      <div className="mb-8">
+      <div className="mb-8 p-5 rounded-2xl border border-slate-800/60 bg-slate-900/40">
         <h3 className="text-lg font-semibold text-slate-200 mb-4">
           Query Preview
         </h3>
@@ -1587,13 +1626,13 @@ severity>=DEFAULT`}
             </div>
           </div>
         )}
-        <div className="p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl backdrop-blur-sm">
+        <div className="p-4 bg-slate-950/60 border border-slate-800/60 rounded-xl">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-slate-300">
               Generated Query:
             </span>
             <button
-              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg transition-all duration-200"
+              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all duration-200"
               onClick={() => {
                 navigator.clipboard.writeText(queryPreview);
                 toast.success("Query copied to clipboard!");
@@ -1603,7 +1642,7 @@ severity>=DEFAULT`}
               <Copy className="w-4 h-4" />
             </button>
           </div>
-          <div className="font-mono text-sm text-slate-200 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+          <div className="font-mono text-sm text-slate-200 bg-slate-900/60 p-3 rounded-lg border border-slate-800/60">
             {queryPreview || "No query generated yet"}
           </div>
         </div>
@@ -1636,7 +1675,7 @@ severity>=DEFAULT`}
 
       {/* Manual Query Input */}
       {showManualQuery && (
-        <div className="mb-8">
+        <div className="mb-8 p-5 rounded-2xl border border-slate-800/60 bg-slate-900/40 animate-fade-in">
           <h3 className="text-lg font-semibold text-slate-200 mb-4">
             Manual Query Input
           </h3>
@@ -1654,7 +1693,7 @@ severity>=DEFAULT`}
           )}
           <div className="space-y-4">
             <textarea
-              className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 text-slate-200 text-sm font-mono resize-none backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 ease-in-out"
+              className="w-full bg-slate-900/60 border border-slate-800/60 rounded-xl px-4 py-3 text-slate-200 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
               value={manualQuery}
               onChange={(e) => setManualQuery(e.target.value)}
               placeholder="Enter your GCP Logging query here..."
@@ -1662,14 +1701,14 @@ severity>=DEFAULT`}
             />
             <div className="flex items-center gap-4">
               <button
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-200 ease-in-out font-medium"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all font-medium"
                 onClick={handleParseManualQuery}
                 type="button"
               >
                 <CheckCircle className="w-4 h-4" /> Parse Query
               </button>
               <button
-                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg transition-all duration-200 ease-in-out font-medium"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all font-medium"
                 onClick={() => setManualQuery("")}
                 type="button"
               >

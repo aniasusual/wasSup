@@ -44,13 +44,13 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
     """
     Fetch logs from GCP and return in frontend-compatible format (logs, nextPageToken, totalEntries).
     """
-    user_token_data = get_user_tokens(current_user)
+    user_token_data = await get_user_tokens(current_user)
     if not user_token_data:
         raise HTTPException(status_code=401, detail="User not authenticated")
 
     if is_token_expired(current_user):
         await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
+        user_token_data = await get_user_tokens(current_user)
 
     def fetch_logs_sync():
         try:
@@ -63,7 +63,6 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
             order_by = query.get("orderBy", "timestamp desc")
             project_id = query["projectId"]
 
-            print("filter_str", filter_str)
 
             logger.info(
                 f"Fetching logs via REST with filter: {filter_str}, page_size: {page_size}, page_token: {page_token}"
@@ -166,7 +165,7 @@ async def fetch_logs(query: Any = Body(...), current_user: str = Depends(get_cur
 @router.get("/logs/projects")
 async def get_projects(current_user: str = Depends(get_current_user)):
     """Get list of GCP projects accessible to the user"""
-    user_token_data = get_user_tokens(current_user)
+    user_token_data = await get_user_tokens(current_user)
     if not user_token_data:
         raise HTTPException(status_code=401, detail="User not authenticated")
     
@@ -174,7 +173,7 @@ async def get_projects(current_user: str = Depends(get_current_user)):
     if is_token_expired(current_user):
         # Try to refresh
         await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
+        user_token_data = await get_user_tokens(current_user)
     
     try:
         # Create credentials from token
@@ -207,68 +206,6 @@ async def get_projects(current_user: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Error fetching projects: {str(e)}")
 
 
-@router.post("/logs/analyze")
-async def analyze_logs(query: Any = Body(...), current_user: str = Depends(get_current_user)):
-    """Agent endpoint for log analysis - works with analysis data from query endpoint"""
-    user_token_data = get_user_tokens(current_user)
-    if not user_token_data:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-    
-    if is_token_expired(current_user):
-        await refresh_token(current_user)
-        user_token_data = get_user_tokens(current_user)
-    
-    try:
-        # Extract analysis parameters
-        analysis_question = query.get("question", "")
-        analysis_data = query.get("analysis_data", {})
-        filter_applied = query.get("filter_applied", "")
-        project_id = query.get("project_id", "")
-        
-        if not analysis_data or not analysis_data.get("logs_for_analysis"):
-            raise HTTPException(status_code=400, detail="No analysis data provided. Please query logs first.")
-        
-        # Prepare data for agent analysis with complete log objects
-        agent_analysis_data = {
-            "question": analysis_question,
-            "filter_applied": filter_applied,
-            "project_id": project_id,
-            "logs": analysis_data["logs_for_analysis"],  # Complete log objects
-            "complete_logs": analysis_data["logs_for_analysis"],  # Explicit alias for complete logs
-            "summary": {
-                "total_entries": analysis_data["total_entries"],
-                "severity_distribution": analysis_data["severity_distribution"],
-                "resource_types": analysis_data["resource_types"],
-                "time_range": analysis_data["time_range"],
-                "error_count": analysis_data["error_count"],
-                "warning_count": analysis_data["warning_count"],
-                "info_count": analysis_data["info_count"]
-            }
-        }
-
-        # TODO: Here you would integrate with your AI agent
-        # The agent can now analyze the complete log objects with all their fields and structure
-        return {
-            "analysis_data": agent_analysis_data,
-            "agent_ready": True,
-            "message": f"Complete log objects prepared for agent analysis. {len(analysis_data['logs_for_analysis'])} complete log entries available for analysis.",
-            "metadata": {
-                "logs_analyzed": len(analysis_data["logs_for_analysis"]),
-                "question": analysis_question,
-                "filter_applied": filter_applied,
-                "project_id": project_id,
-                "summary_stats": {
-                    "total_entries": analysis_data["total_entries"],
-                    "error_count": analysis_data["error_count"],
-                    "warning_count": analysis_data["warning_count"],
-                    "info_count": analysis_data["info_count"]
-                }
-            }
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error analyzing logs: {str(e)}")
-
 @router.post("/logs/gcp-resource-options")
 async def gcp_resource_options(
     request: dict = Body(...),
@@ -288,13 +225,13 @@ async def gcp_resource_options(
         if not resourceType or not label or not projectId:
             return {"options": [], "message": "Missing required parameters: resourceType, label, or projectId"}
         
-        user_token_data = get_user_tokens(current_user)
+        user_token_data = await get_user_tokens(current_user)
         if not user_token_data:
             raise HTTPException(status_code=401, detail="User not authenticated")
             
         if is_token_expired(current_user):
             await refresh_token(current_user)
-            user_token_data = get_user_tokens(current_user)
+            user_token_data = await get_user_tokens(current_user)
         
         # Find the API config for this resourceType and label
         api_config = GCP_API_ENDPOINTS.get(resourceType, {}).get(label)
@@ -346,10 +283,8 @@ async def gcp_resource_options(
             "Content-Type": "application/json"
         }
         
-        print(f"Making API call to: {endpoint_url}")  # Debug logging
         response = requests.get(endpoint_url, headers=headers, timeout=30)
         
-        print(f"API Response Status: {response.status_code}")  # Debug logging
         
         if not response.ok:
             error_msg = f"API call failed: {response.status_code}"
@@ -362,7 +297,6 @@ async def gcp_resource_options(
         
         try:
             data = response.json()
-            print(f"Raw API Response Keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")  # Debug logging
         except Exception as e:
             return {"options": [], "message": f"Failed to parse JSON response: {str(e)}"}
         
@@ -371,9 +305,7 @@ async def gcp_resource_options(
         if transform_func:
             try:
                 options = transform_func(data)
-                print(f"Transformed options count: {len(options) if isinstance(options, list) else 'Not a list'}")  # Debug logging
             except Exception as e:
-                print(f"Transform function error: {str(e)}")  # Debug logging
                 return {"options": [], "message": f"Transform function failed: {str(e)}"}
         else:
             # If no transform function, try to extract common patterns
@@ -396,7 +328,6 @@ async def gcp_resource_options(
         # Filter out None, empty strings, and ensure all items are strings
         options = [str(opt) for opt in options if opt is not None and str(opt).strip()]
         
-        print(f"Final options: {options[:10]}...")  # Debug logging (first 10 items)
         
         return {
             "options": options, 
@@ -411,6 +342,5 @@ async def gcp_resource_options(
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"Unexpected error in gcp_resource_options: {error_trace}")
         return {"options": [], "message": f"Unexpected error: {str(e)}"}
     

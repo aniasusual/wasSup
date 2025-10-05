@@ -23,14 +23,12 @@ const AppContent = () => {
     return () => window.removeEventListener("popstate", handleLocationChange);
   }, []);
 
-  console.log("path", path);
 
   // Check if we're on the auth success page and have a token
   const urlParams = new URLSearchParams(window.location.search);
   const hasToken = urlParams.get("token");
 
   if (path === "/auth/success" && hasToken) {
-    console.log("auth success with token");
     return <AuthSuccess />;
   }
 

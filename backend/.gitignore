@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.env
+*.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+# logs/
+# data/
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+node_modules/
+build/
+dist/
+*.parquet
+.venv/
+.langgraph_api/

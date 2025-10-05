@@ -52,7 +52,7 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
 
   // Format time for display
   const formatTime = useCallback((timestamp: number) => {
-    const date = new Date(timestamp);
+    // const date = new Date(timestamp);
     const now = new Date();
     const diffMs = now.getTime() - timestamp;
     const diffMins = Math.floor(diffMs / MS_PER_MIN);
@@ -69,7 +69,7 @@ const DateTimeSearchBar: React.FC<DateTimeSearchBarProps> = ({
   const minTs = useMemo(() => Date.now() - 24 * 60 * MS_PER_MIN, []);
   const maxTs = useMemo(() => Date.now(), []);
 
-  // Convert ISO strings to timestamps for slider, with fallbacks
+  // Convert ISO strings to timestamps for slider
   const startTs = useMemo(() => {
     if (!startDate) return Date.now() - 5 * MS_PER_MIN;
     const ts = new Date(startDate).getTime();

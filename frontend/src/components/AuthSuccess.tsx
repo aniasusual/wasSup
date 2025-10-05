@@ -24,7 +24,6 @@ export const AuthSuccess = () => {
         window.history.replaceState({}, document.title, "/");
         toast.success("Successfully authenticated!");
       } catch (error) {
-        console.error("Authentication error:", error);
         setError("Failed to authenticate");
         toast.error(
           `Authentication failed: ${
