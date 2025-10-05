@@ -34,6 +34,6 @@ export const parseGCPErrorMessage = (errorMessage: string): string => {
         }
     }
 
-    // Fallback: return first 100 characters of the error
+    // Return first 100 characters of the error
     return errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage;
 };

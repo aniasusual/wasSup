@@ -22,7 +22,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("check: ", settings.API_V1_STR);
 
 # In-memory storage (use Redis or database in production)
 app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -36,8 +35,14 @@ async def health_check():
 @app.on_event("startup")
 async def startup_event():
     """Startup tasks when the application starts."""
-    from .services.session_cleanup import start_cleanup_task
-    start_cleanup_task()
+    from .core.database import connect_to_mongo
+    await connect_to_mongo()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown tasks when the application stops."""
+    from .core.database import close_mongo_connection
+    await close_mongo_connection()
 
 
 if __name__ == "__main__":

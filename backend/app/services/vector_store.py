@@ -175,16 +175,7 @@ class QdrantVectorStore:
                 )
             except Exception as e:
                 print(f"Search with filters failed: {e}")
-                print("Retrying search without filters...")
-                # Fallback: search without filters if indexing fails
-                qr = self.client.search(
-                    collection_name=collection,
-                    query_vector=vectors[0],
-                    query_filter=None,  # No filters
-                    limit=limit,
-                    with_payload=True,
-                    with_vectors=False,
-                )
+                raise e
         else:
             # No filters to apply, search without filters
             qr = self.client.search(

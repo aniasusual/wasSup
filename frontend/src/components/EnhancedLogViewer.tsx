@@ -121,7 +121,7 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
     <div
       className={`border-l-4 ${getSeverityColor(
         log.severity
-      )} bg-gray-900 hover:bg-gray-800 transition-colors`}
+      )} glass-card hover-card animate-fade-in`}
     >
       <div className="p-4">
         {/* Header */}
@@ -164,7 +164,7 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
           {/* Always show expand/collapse button */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="flex-shrink-0 p-1 text-gray-400 hover:text-white transition-colors"
+            className="flex-shrink-0 p-1 text-slate-400 hover:text-white transition-colors"
             title={isExpanded ? "Collapse log" : "Expand log"}
           >
             {isExpanded ? (
@@ -177,7 +177,7 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
 
         {/* Resource Info */}
         {log.resource && (
-          <div className="mt-2 text-sm text-gray-400">
+          <div className="mt-2 text-sm text-slate-400">
             <span className="font-medium">Resource:</span> {log.resource.type}
             {log.resource.labels &&
               Object.entries(log.resource.labels).map(([key, value]) => (
@@ -190,7 +190,7 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
 
         {/* Labels */}
         {log.labels && Object.keys(log.labels).length > 0 && (
-          <div className="mt-2 text-sm text-gray-400">
+          <div className="mt-2 text-sm text-slate-400">
             <span className="font-medium">Labels:</span>
             {Object.entries(log.labels).map(([key, value]) => (
               <span key={key} className="ml-2">
@@ -202,11 +202,11 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
 
         {/* Detailed Timestamp Info */}
         {isExpanded && (
-          <div className="mt-4 p-3 bg-gray-800 rounded-lg">
+          <div className="mt-4 p-3 bg-slate-800/70 rounded-lg reveal animate-slide-up">
             <h4 className="text-sm font-medium text-gray-300 mb-2">
               Timestamp Details
             </h4>
-            <div className="text-xs text-gray-400 space-y-1">
+            <div className="text-xs text-slate-300/90 space-y-1">
               <div>Exact Time: {formatTimestamp(log.timestamp).exact}</div>
               <div>
                 Relative Time: {formatTimestamp(log.timestamp).relative}
@@ -221,7 +221,7 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
 
         {/* Expanded Structured Data */}
         {isExpanded && hasStructuredData && (
-          <div className="mt-4 p-3 bg-gray-800 rounded-lg">
+          <div className="mt-4 p-3 bg-slate-800/70 rounded-lg reveal animate-slide-up">
             <h4 className="text-sm font-medium text-gray-300 mb-2">
               Structured Data
             </h4>
@@ -248,7 +248,7 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
                 <h5 className="text-xs font-medium text-gray-400 mb-1">
                   JSON Payload
                 </h5>
-                <pre className="text-xs text-gray-300 bg-gray-900 p-2 rounded overflow-x-auto">
+                <pre className="text-xs text-slate-200 bg-slate-900/80 p-2 rounded overflow-x-auto">
                   {JSON.stringify(log.jsonPayload, null, 2)}
                 </pre>
               </div>
@@ -270,11 +270,11 @@ const LogEntryComponent = ({ log }: { log: LogEntry }) => {
         )}
         {/* Show full log object as JSON when expanded */}
         {isExpanded && (
-          <div className="mt-4 p-3 bg-gray-900 rounded-lg">
+          <div className="mt-4 p-3 bg-slate-900/80 rounded-lg gradient-border reveal animate-slide-up">
             <h4 className="text-sm font-medium text-gray-300 mb-2">
               Full Log Object
             </h4>
-            <pre className="text-xs text-gray-200 bg-gray-950 p-2 rounded overflow-x-auto">
+            <pre className="text-xs text-slate-200 bg-slate-950 p-2 rounded overflow-x-auto">
               {JSON.stringify(log, null, 2)}
             </pre>
           </div>
@@ -291,10 +291,10 @@ export const EnhancedLogViewer = ({
   if (logs.length === 0) {
     return (
       <div
-        className={`flex items-center justify-center p-8 text-gray-400 ${className}`}
+        className={`flex items-center justify-center p-8 text-slate-400 ${className}`}
       >
         <div className="text-center">
-          <MessageSquare className="w-12 h-12 mx-auto mb-4 text-gray-600" />
+          <MessageSquare className="w-12 h-12 mx-auto mb-4 text-slate-600" />
           <p className="text-lg font-medium">No logs found</p>
           <p className="text-sm">Try adjusting your filters or time range</p>
         </div>
@@ -303,7 +303,7 @@ export const EnhancedLogViewer = ({
   }
 
   return (
-    <div className={`space-y-1 ${className}`}>
+    <div className={`space-y-2 ${className}`}>
       {logs.map((log) => (
         <LogEntryComponent key={log.id} log={log} />
       ))}

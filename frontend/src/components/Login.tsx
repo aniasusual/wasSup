@@ -15,7 +15,6 @@ export const Login = () => {
       const response = await axios.get("/api/v1/auth/login");
       window.location.href = response.data.auth_url;
     } catch (error: any) {
-      console.error("Login error:", error);
       let errorMessage = "Failed to initiate login";
       if (error.response?.data?.detail) {
         errorMessage = error.response.data.detail;
@@ -34,37 +33,14 @@ export const Login = () => {
         <div className="absolute inset-0 bg-grid"></div>
       </div>
 
-      {/* Animated gradient orbs */}
-      <div className="absolute top-0 -left-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob"></div>
-      <div className="absolute bottom-0 right-0 w-80 h-80 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob animation-delay-2000"></div>
-      <div className="absolute -bottom-40 left-20 w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob animation-delay-4000"></div>
-
+     
       <div className="relative z-10 bg-slate-900/80 backdrop-blur-xl p-10 rounded-3xl shadow-2xl max-w-lg w-full border border-slate-800">
         {/* Logo section with animated icon */}
         <div className="flex justify-center mb-6">
           <div className="relative">
-            <div className="w-24 h-24 bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-2xl animate-pulse-slow">
-              {/* Hand wave emoji-style icon */}
-              <svg
-                className="w-14 h-14 text-white"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M7.03 4.95L3.49 8.49c-3.32 3.32-3.32 8.7 0 12.02s8.7 3.32 12.02 0l6.01-6.01a2.517 2.517 0 00-.39-3.86l.39-.39c.97-.97.97-2.56 0-3.54-.16-.16-.35-.3-.54-.41a2.497 2.497 0 00-3.72-3.05 2.517 2.517 0 00-3.88-.42l-2.51 2.51a2.493 2.493 0 00-3.84-.39zm1.41 1.42c.2-.2.51-.2.71 0 .2.2.2.51 0 .71l-3.18 3.18a3 3 0 010 4.24l1.41 1.41a5.004 5.004 0 001.12-5.36l6.3-6.3c.2-.2.51-.2.71 0s.2.51 0 .71l-4.6 4.6 1.41 1.41 6.01-6.01c.2-.2.51-.2.71 0 .2.2.2.51 0 .71l-6.01 6.01 1.41 1.41 4.95-4.95c.2-.2.51-.2.71 0 .2.2.2.51 0 .71l-5.66 5.66 1.41 1.41 3.54-3.54c.2-.2.51-.2.71 0 .2.2.2.51 0 .71l-6 6.01c-2.54 2.54-6.65 2.54-9.19 0s-2.54-6.65 0-9.19l3.53-3.54zM8.44 6.37c.2-.2.51-.2.71 0s.2.51 0 .71l-3.18 3.18a3 3 0 010 4.24l1.41 1.41a5.004 5.004 0 001.12-5.36l.52-.52-1.41-1.41-.73.73z" />
-              </svg>
-            </div>
-            <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-400 rounded-full animate-ping"></div>
-            <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-400 rounded-full"></div>
+              <img src="/logo.png" alt="Recce" className="w-74 h-74" />
           </div>
         </div>
-
-        <h1 className="text-4xl font-bold mb-3 text-center text-white">
-          Recce
-        </h1>
-
-        <p className="text-cyan-400 text-center mb-2 text-lg font-medium">
-          Your AI Log Detective
-        </p>
 
         <p className="text-slate-400 text-center mb-8 text-sm">
           Reconnaissance of the logs
@@ -100,7 +76,7 @@ export const Login = () => {
             <div className="flex items-start">
               <span className="text-purple-400 font-bold mr-2">2.</span>
               <span className="text-slate-300">
-                Tell the chatbot your problem:{" "}
+                Tell the system your problem:{" "}
                 <span className="text-slate-400 italic">
                   "User can't push to GitHub"
                 </span>

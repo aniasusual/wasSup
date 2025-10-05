@@ -1,17 +1,22 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Search, RefreshCw, Download, Settings, X } from "lucide-react";
 import { ProviderSelector } from "../components/ProviderSelector";
 import { LogTabs } from "../components/LogTabs";
 import { EnhancedLogViewer } from "../components/EnhancedLogViewer";
-import { Chatbot } from "../components/Chatbot";
 import ProviderFilters from "../components/Filters/ProviderFilters";
 import { useAuth } from "../contexts/Auth";
 import { useLogService } from "../services/logService";
-import type { GCPService, LogTab } from "../types/gcp";
+import type { FilterState, GCPService, LogTab } from "../types/gcp";
+import type { ChatLogReference } from "../types/chat";
 import { GCPQueryBuilder } from "../components/GCPQueryBuilder";
 import DateTimeSearchBar from "../components/DateTimeSearchBar";
+import { ProjectArchitecturePrompt } from "../components/ProjectArchitecturePrompt";
+import { ChatbotPanel } from "../components/chat";
 import toast from "react-hot-toast";
 import { parseGCPErrorMessage } from "../utils/errorUtils";
+import axios from "axios";
+import { Link } from "react-router-dom";
+import useChatSession from "../hooks/useChatSession";
 
 export const Home = () => {
   const [selectedService, setSelectedService] = useState<
@@ -79,7 +84,6 @@ export const Home = () => {
   // Handle time range changes from slider (debounced)
   const handleTimeRangeChange = useCallback(
     (newStartDate: string, newEndDate: string) => {
-      console.log("Time range changed:", { newStartDate, newEndDate });
       setPendingSearch({
         searchQuery,
         startDate: newStartDate,
@@ -91,6 +95,85 @@ export const Home = () => {
 
   const [logCount, setLogCount] = useState(100); // Add log count state
   const [isChatbotExpanded, setIsChatbotExpanded] = useState(false); // Add chatbot expand state
+  const [projectArchitecture, setProjectArchitecture] = useState<string>(""); // Project architecture state
+
+  const chatBaseContext = useMemo(() => {
+    const context: Record<string, unknown> = {};
+    if (selectedService?.id) {
+      context.services = [selectedService.id];
+    }
+    if (pendingSearch.searchQuery) {
+      context.query = pendingSearch.searchQuery;
+    }
+    if (pendingSearch.startDate && pendingSearch.endDate) {
+      context.timeRange = {
+        start: pendingSearch.startDate,
+        end: pendingSearch.endDate,
+      };
+    }
+    if (activeTabId) {
+      context.activeTabId = activeTabId;
+    }
+    if (projectArchitecture) {
+      context.architectureSummary = projectArchitecture;
+    }
+    return context;
+  }, [activeTabId, pendingSearch, projectArchitecture, selectedService]);
+
+  const chatSession = useChatSession({
+    projectId: selectedProject || undefined,
+    baseContext: chatBaseContext,
+  });
+
+  const {
+    messages: chatMessages,
+    isStreaming: isChatStreaming,
+    error: chatError,
+    suggestions: chatSuggestions,
+    lastPlan: chatPlan,
+    contextSummary: chatContextSummary,
+    queryAnalysis: chatQueryAnalysis,
+    queryHistory: chatQueryHistory,
+    sendMessage: sendChatMessage,
+    runSuggestion: runChatSuggestion,
+    resetChat,
+  } = chatSession;
+  const [chatDraft, setChatDraft] = useState("");
+
+  // Resizable splitter state for logs/chat widths (xl+ screens)
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [splitPct, setSplitPct] = useState<number>(65); // logs width percent
+  const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
+  const onMouseDownSplit = (e: React.MouseEvent) => {
+    setIsDraggingSplit(true);
+    e.preventDefault();
+  };
+  useEffect(() => {
+    if (!isDraggingSplit) return;
+    const handleMove = (e: MouseEvent) => {
+      const rect = splitContainerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      let pct = (x / rect.width) * 100;
+      pct = Math.max(35, Math.min(80, pct)); // clamp
+      setSplitPct(pct);
+    };
+    const handleUp = () => {
+      setIsDraggingSplit(false);
+      document.body.style.cursor = "";
+      (document.body.style as any).userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    (document.body.style as any).userSelect = "none";
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+      document.body.style.cursor = "";
+      (document.body.style as any).userSelect = "";
+    };
+  }, [isDraggingSplit]);
 
   // Initialize pending search with default time values
   useEffect(() => {
@@ -117,33 +200,25 @@ export const Home = () => {
   const fetchProjects = async () => {
     if (!token) return;
     try {
-      const response = await fetch("/api/v1/logs/projects", {
-        method: "GET",
+      const response = await axios.get("/api/v1/logs/projects", {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
       });
-      if (response.ok) {
-        const data = await response.json();
-        setProjects(data.projects || []);
-        if (data.projects && data.projects.length > 0) {
-          setSelectedProject(data.projects[0].project_id);
-        }
-      } else {
-        // Check for authentication errors
-        if (response.status === 401 || response.status === 403) {
-          forceLogout("Authentication token expired or invalid");
-          return;
-        }
-
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.detail || response.statusText;
-        const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
-        toast.error(`Failed to fetch projects: ${userFriendlyMessage}`);
+      const data = response.data;
+      setProjects(data.projects || []);
+      if (data.projects && data.projects.length > 0) {
+        setSelectedProject(data.projects[0].project_id);
       }
-    } catch (error) {
-      console.error("Error fetching projects:", error);
+    } catch (error: any) {
+      // Error fetching projects
+
+      // Check for authentication errors
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        forceLogout("Authentication token expired or invalid");
+        return;
+      }
 
       // Check if it's an authentication error
       if (
@@ -153,8 +228,7 @@ export const Home = () => {
         return; // Already handled by forceLogout
       }
 
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error.response?.data?.detail || error.response?.statusText || error.message || String(error);
       const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
       toast.error(`Failed to fetch projects: ${userFriendlyMessage}`);
     }
@@ -169,7 +243,7 @@ export const Home = () => {
       id: tabId,
       title: tabTitle,
       serviceId: service.id,
-      isActive: true,
+      isActive: false,
       filters: {
         severity: [],
         resourceType: service.id, // Ensure resourceType is set to the service id
@@ -183,7 +257,10 @@ export const Home = () => {
       query: "",
       lastUpdated: new Date(),
     };
-    setTabs((prev) => [...prev, newTab]);
+    setTabs((prev) => [
+      ...prev.map((tab) => ({ ...tab, isActive: false })),
+      newTab,
+    ]);
     setActiveTabId(tabId);
     setSelectedService(service);
     // Initial fetch for the newly created tab
@@ -215,7 +292,7 @@ export const Home = () => {
       id: tabId,
       title,
       serviceId: log.serviceId || "unknown",
-      isActive: true,
+      isActive: false,
       filters: {
         severity: log.severity ? [log.severity] : [],
         resourceType: log.serviceId || "",
@@ -245,6 +322,7 @@ export const Home = () => {
     // Fetch logs for the insight tab
     void fetchLogsForTab(newTab);
   };
+
 
   // Update active tab when changed
   useEffect(() => {
@@ -284,7 +362,7 @@ export const Home = () => {
     if (tab) {
       setOpenQueryBuilderTabId(tabId);
     } else {
-      console.error(`Tab with id ${tabId} not found`);
+      // Tab not found
     }
   };
 
@@ -345,58 +423,137 @@ export const Home = () => {
   const currentTab = getCurrentTab();
 
   // Fetch logs for a specific tab, always applying global search and time filters
-  const fetchLogsForTab = async (tab: LogTab) => {
-    if (!selectedProvider || !selectedProject || !tab) return;
-    setIsLoading(true);
+  const fetchLogsForTab = useCallback(
+    async (tab: LogTab) => {
+      if (!selectedProvider || !selectedProject || !tab) return;
+      setIsLoading(true);
 
-    console.log("fetchLogsForTab called with:", {
-      tabId: tab.id,
-      tabQuery: tab.query,
-      resourceType: tab.filters.resourceType,
-      pendingSearch: {
-        searchQuery: pendingSearch.searchQuery,
-        startDate: pendingSearch.startDate,
-        endDate: pendingSearch.endDate,
-      },
-    });
+      try {
+        const res = await fetchLogs({
+          projectId: selectedProject,
+          serviceId: tab.filters.resourceType,
+          filter: tab.query,
+          filters: {
+            ...tab.filters,
+            customQuery: pendingSearch.searchQuery,
+            customStartTime: pendingSearch.startDate,
+            customEndTime: pendingSearch.endDate,
+          },
+          pageSize: logCount,
+        });
+        const logs = Array.isArray(res?.logs) ? res.logs : [];
+        const nextToken =
+          typeof res?.nextPageToken === "string" ? res.nextPageToken : null;
+        setTabLogs((prev) => ({ ...prev, [tab.id]: logs }));
+        setTabNextTokens((prev) => ({
+          ...prev,
+          [tab.id]: nextToken,
+        }));
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("Authentication failed")) {
+          return; // Already handled by forceLogout
+        }
 
-    try {
-      const res = await fetchLogs({
-        projectId: selectedProject,
-        serviceId: tab.filters.resourceType,
-        filter: tab.query, // Use as filter if present
-        filters: {
-          ...tab.filters,
-          customQuery: pendingSearch.searchQuery, // Apply global search
-          customStartTime: pendingSearch.startDate, // Apply global start time
-          customEndTime: pendingSearch.endDate, // Apply global end time
-        },
-        pageSize: logCount, // Pass log count
-      });
-      const logs = Array.isArray(res?.logs) ? res.logs : [];
-      const nextToken =
-        typeof res?.nextPageToken === "string" ? res.nextPageToken : null;
-      setTabLogs((prev) => ({ ...prev, [tab.id]: logs }));
-      setTabNextTokens((prev) => ({
-        ...prev,
-        [tab.id]: nextToken,
-      }));
-    } catch (e) {
-      console.error("Error fetching logs:", e);
+        setTabLogs((prev) => ({ ...prev, [tab.id]: [] }));
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
+        toast.error(`Failed to fetch logs: ${userFriendlyMessage}`);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [
+      selectedProvider,
+      selectedProject,
+      fetchLogs,
+      pendingSearch.searchQuery,
+      pendingSearch.startDate,
+      pendingSearch.endDate,
+      logCount,
+    ]
+  );
 
-      // Check if it's an authentication error
-      if (e instanceof Error && e.message.includes("Authentication failed")) {
-        return; // Already handled by forceLogout
+  const extractResourceTypeFromFilter = (filter?: string) => {
+    if (!filter) return "";
+    const match = filter.match(/resource\.type="([^"]+)"/i);
+    return match ? match[1] : "";
+  };
+
+  const handleLogReferenceSelect = useCallback(
+    (reference: ChatLogReference) => {
+      if (!selectedProvider) {
+        toast.error("Select a provider before opening log references.");
+        return;
       }
 
-      setTabLogs((prev) => ({ ...prev, [tab.id]: [] }));
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      const userFriendlyMessage = parseGCPErrorMessage(errorMessage);
-      toast.error(`Failed to fetch logs: ${userFriendlyMessage}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      if (!selectedProject) {
+        toast.error("Select a project before opening log references.");
+        return;
+      }
+
+      const resourceFromFilter = extractResourceTypeFromFilter(reference.filter);
+      const resourceType = resourceFromFilter || reference.service_type || "project_logs";
+      const filterString = reference.filter ?? "";
+      const startTime = reference.time_range?.start ?? "";
+      const endTime = reference.time_range?.end ?? "";
+      const hasCustomTimeRange = Boolean(startTime && endTime);
+
+      const existingTab = tabs.find(
+        (tab) => tab.query === filterString && tab.serviceId === resourceType
+      );
+      const tabId = existingTab?.id ?? `logref-${reference.id ?? Date.now()}`;
+      const titleParts = [reference.service_name, reference.severity]
+        .filter((part): part is string => Boolean(part && part.trim()))
+        .map((part) => part.trim());
+      const title = titleParts.length
+        ? `${titleParts.join(" · ")} logs`
+        : "Log Reference";
+
+      const filters: FilterState = {
+        severity: reference.severity ? [reference.severity] : [],
+        resourceType,
+        logType: [],
+        sourceLocation: "",
+        userAccount: "",
+        requestId: "",
+        timeRange: hasCustomTimeRange ? "custom" : "1h",
+        customQuery: filterString,
+        ...(hasCustomTimeRange
+          ? {
+              customStartTime: startTime,
+              customEndTime: endTime,
+            }
+          : {}),
+      };
+
+      const tabData: LogTab = {
+        id: tabId,
+        title,
+        serviceId: resourceType,
+        isActive: false,
+        filters,
+        query: filterString,
+        lastUpdated: new Date(),
+        type: "insight",
+        sourceMessageId: reference.id,
+      };
+
+      setTabs((prev) => {
+        const normalized = prev.map((tab) => ({ ...tab, isActive: false }));
+        if (existingTab) {
+          return normalized.map((tab) =>
+            tab.id === existingTab.id ? { ...tabData } : tab
+          );
+        }
+        return [...normalized, tabData];
+      });
+      setActiveTabId(tabId);
+      setSelectedService(undefined);
+
+      void fetchLogsForTab(tabData);
+    },
+    [selectedProvider, selectedProject, fetchLogsForTab, tabs]
+  );
 
   // Load more logs using nextPageToken for the active tab
   const loadMoreForActiveTab = useCallback(async () => {
@@ -435,7 +592,7 @@ export const Home = () => {
         [activeTabId]: next,
       }));
     } catch (e) {
-      console.error("Error loading more logs:", e);
+      // Error loading more logs
     } finally {
       setIsLoadingMore(false);
     }
@@ -497,13 +654,40 @@ export const Home = () => {
     [tabs]
   );
 
+  const handleChatSend = useCallback(() => {
+    const trimmed = chatDraft.trim();
+    if (!trimmed) return;
+
+    void sendChatMessage(trimmed, {
+      projectId: selectedProject || undefined,
+      context: { ...chatBaseContext },
+    });
+    setChatDraft("");
+  }, [chatBaseContext, chatDraft, selectedProject, sendChatMessage]);
+
+  const handleChatSuggestionSelect = useCallback(
+    (prompt: string) => {
+      setChatDraft("");
+      void runChatSuggestion(prompt, {
+        projectId: selectedProject || undefined,
+        context: { ...chatBaseContext },
+      });
+    },
+    [chatBaseContext, runChatSuggestion, selectedProject]
+  );
+
+  const handleChatReset = useCallback(() => {
+    setChatDraft("");
+    resetChat();
+  }, [resetChat]);
+
   // Handle chatbot expand toggle
   const handleChatbotToggle = useCallback(() => {
     setIsChatbotExpanded((prev) => !prev);
   }, []);
 
   return (
-    <div className="bg-gray-950 h-screen flex flex-col overflow-hidden">
+    <div className="bg-gray-950 min-h-screen flex flex-col">
       {/* Header */}
       <header className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-800/50 sticky top-0 z-50">
         <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
@@ -511,9 +695,9 @@ export const Home = () => {
             {/* Logo and Title Section */}
             <div className="flex items-center justify-between sm:justify-start">
               <div className="flex items-center space-x-2 sm:space-x-4">
-                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                  Recce
-                </h1>
+                <Link to="/" className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  <img src="/logo.png" alt="Recce" className="w-40 h-40" />
+                </Link>
                 <div className="hidden sm:block h-6 w-px bg-gray-700"></div>
                 <div className="hidden sm:block">
                   <span className="text-xs sm:text-sm text-gray-400">
@@ -591,45 +775,54 @@ export const Home = () => {
         </div>
       </header>
 
-      {/* Provider-specific filters - only show when provider is selected */}
+      {/* Filters and Controls Section - only show when provider is selected */}
       {selectedProvider && (
-        <ProviderFilters
-          selectedProvider={selectedProvider}
-          selectedProject={selectedProject}
-          setSelectedProject={setSelectedProject}
-          projects={projects}
-          selectedService={selectedService}
-          onServiceSelect={handleServiceSelect}
-        />
-      )}
-      {/* Modern Search and Date/Time Filter Bar - only show when provider is selected */}
-      {selectedProvider && (
-        <DateTimeSearchBar
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          startDate={startDate}
-          setStartDate={setStartDate}
-          endDate={endDate}
-          setEndDate={setEndDate}
-          isLoading={isLoading}
-          onSearch={handleSearch}
-          onTimeRangeChange={handleTimeRangeChange}
-        />
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3 space-y-3 sm:space-y-4">
+          {/* Provider-specific filters */}
+          <ProviderFilters
+            selectedProvider={selectedProvider}
+            selectedProject={selectedProject}
+            setSelectedProject={setSelectedProject}
+            projects={projects}
+            selectedService={selectedService}
+            onServiceSelect={handleServiceSelect}
+          />
+
+          {/* Project Architecture Prompt - only show when project is selected */}
+          {selectedProject && (
+            <ProjectArchitecturePrompt
+              projectId={selectedProject}
+              onArchitectureChange={setProjectArchitecture}
+              className="w-full"
+            />
+          )}
+
+          {/* Modern Search and Date/Time Filter Bar */}
+          <DateTimeSearchBar
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+            isLoading={isLoading}
+            onSearch={handleSearch}
+            onTimeRangeChange={handleTimeRangeChange}
+          />
+        </div>
       )}
 
       {/* Tabs */}
       {tabs.length > 0 && (
-        <div className="">
-          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
-            <LogTabs
-              tabs={tabs}
-              activeTabId={activeTabId}
-              onTabSelect={handleTabSelect}
-              onTabClose={handleTabClose}
-              onOpenQueryBuilder={handleOpenQueryBuilder}
-              onRefreshTab={refreshTabById}
-            />
-          </div>
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
+          <LogTabs
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onTabSelect={handleTabSelect}
+            onTabClose={handleTabClose}
+            onOpenQueryBuilder={handleOpenQueryBuilder}
+            onRefreshTab={refreshTabById}
+          />
         </div>
       )}
 
@@ -659,13 +852,13 @@ export const Home = () => {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3 min-h-0">
+      <main className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16 py-2 sm:py-3">
         {!selectedProvider ? (
           // Show welcome message when no provider is selected
-          <div className="flex flex-col items-center justify-center h-full">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 xl:w-24 xl:h-24 bg-gray-800 rounded-full flex items-center justify-center mb-6 sm:mb-8 xl:mb-10">
-              <span className="text-2xl sm:text-3xl xl:text-4xl">☁️</span>
-            </div>
+          <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
+            {/* <div className="w-16 h-16 sm:w-20 sm:h-20 xl:w-24 xl:h-24 bg-gray-800 rounded-full flex items-center justify-center mb-6 sm:mb-8 xl:mb-10"> */}
+              <img src="/logo.png" alt="Recce" className="w-56 h-56" />
+            {/* </div> */}
             <h2 className="text-xl sm:text-2xl xl:text-3xl font-semibold text-white mb-3 sm:mb-4 xl:mb-6 text-center">
               Welcome to Recce
             </h2>
@@ -680,32 +873,42 @@ export const Home = () => {
             </div>
           </div>
         ) : (
-          <div className="h-full">
+          <div className="w-full">
             {isChatbotExpanded ? (
               /* Full-screen Chatbot when expanded */
-              <div className="h-full">
-                <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg h-full overflow-hidden">
-                  <div className="h-full flex flex-col min-h-0">
-                    <Chatbot
-                      key="chatbot-main" // Use same key to maintain component identity
-                      selectedServices={
-                        selectedService ? [selectedService.id] : []
-                      }
-                      projectId={selectedProject}
-                      onOpenInsight={handleOpenInsightFromChat}
-                      isExpanded={isChatbotExpanded}
-                      onToggleExpand={handleChatbotToggle}
-                    />
-                  </div>
+              <div className="w-full">
+                <div className="glass-card gradient-border hover-card h-[75vh] min-h-0 animate-fade-in">
+                  <ChatbotPanel
+                    messages={chatMessages}
+                    isStreaming={isChatStreaming}
+                    error={chatError}
+                    suggestions={chatSuggestions}
+                    inputValue={chatDraft}
+                    onInputChange={setChatDraft}
+                    onSend={handleChatSend}
+                    onSuggestionSelect={handleChatSuggestionSelect}
+                    onReset={handleChatReset}
+                    onToggleExpand={handleChatbotToggle}
+                    isExpanded={true}
+                    plan={chatPlan}
+                    contextSummary={chatContextSummary}
+                    queryAnalysis={chatQueryAnalysis}
+                    queryHistory={chatQueryHistory}
+                    onLogReferenceSelect={handleLogReferenceSelect}
+                  />
                 </div>
               </div>
             ) : (
               /* Normal layout with logs and chatbot side by side */
-              <div className="grid grid-cols-1 xl:grid-cols-20 2xl:grid-cols-20 gap-3 sm:gap-4 xl:gap-6 2xl:gap-8 h-full">
+              <div
+                ref={splitContainerRef}
+                className="grid grid-cols-1 xl:grid-cols-[var(--left)_12px_1fr] gap-3 sm:gap-4 xl:gap-6 2xl:gap-8 animate-fade-in"
+                style={{ ['--left' as any]: `${splitPct}%` }}
+              >
                 {/* Logs Section */}
-                <div className="xl:col-span-13 2xl:col-span-13 flex flex-col min-h-0">
+                <div className="flex flex-col min-w-0">
                   {/* Logs Viewer Card */}
-                  <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg overflow-hidden flex-1 flex flex-col min-h-0">
+                  <div className="glass-card gradient-border hover-card flex flex-col h-[70vh]">
                     <div className="px-4 sm:px-6 xl:px-8 py-2 sm:py-3 xl:py-4 border-b border-gray-800/50 bg-gray-900/30">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
                         <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4">
@@ -716,9 +919,7 @@ export const Home = () => {
                           <select
                             className="ml-2 px-2 py-1 rounded bg-gray-800 text-blue-400 border border-blue-800 text-xs xl:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={logCount}
-                            onChange={(e) =>
-                              setLogCount(Number(e.target.value))
-                            }
+                            onChange={(e) => setLogCount(Number(e.target.value))}
                             style={{ minWidth: 60 }}
                             title="Select number of logs to display"
                           >
@@ -737,11 +938,9 @@ export const Home = () => {
                             )}
                         </div>
                         {isLoading && (
-                          <div className="flex items-center space-x-2 xl:space-x-3 text-gray-400">
+                          <div className="flex items-center space-x-2 xl:space-x-3 text-slate-400">
                             <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                            <span className="text-xs sm:text-sm xl:text-base">
-                              Loading logs...
-                            </span>
+                            <span className="text-xs sm:text-sm xl:text-base">Loading logs...</span>
                           </div>
                         )}
                       </div>
@@ -750,8 +949,8 @@ export const Home = () => {
                       {(!activeTabId ||
                         !tabLogs[activeTabId] ||
                         tabLogs[activeTabId].length === 0) &&
-                      !isLoading ? (
-                        <div className="flex-1 flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8">
+                        !isLoading ? (
+                        <div className="flex-1 flex flex-col items-center justify-center py-8 sm:py-12 xl:py-16 px-4 sm:px-6 xl:px-8 min-h-[40vh]">
                           <div className="w-12 h-12 sm:w-16 sm:h-16 xl:w-20 xl:h-20 bg-gray-800 rounded-full flex items-center justify-center mb-3 sm:mb-4 xl:mb-6">
                             <Search className="w-6 h-6 sm:w-8 sm:h-8 xl:w-10 xl:h-10 text-gray-400" />
                           </div>
@@ -770,14 +969,22 @@ export const Home = () => {
                           onScroll={handleScroll}
                           className="flex-1 overflow-y-auto min-h-0"
                         >
-                          <EnhancedLogViewer
-                            logs={tabLogs[activeTabId] || []}
-                          />
+                          {/* Loading skeleton overlay when fetching initial batch */}
+                          {isLoading && (!tabLogs[activeTabId] || tabLogs[activeTabId].length === 0) && (
+                            <div className="p-4 space-y-3">
+                              {Array.from({ length: 6 }).map((_, i) => (
+                                <div key={i} className="glass-card p-4 border-l-4 border-blue-500/40">
+                                  <div className="h-3 w-36 rounded skeleton mb-3" />
+                                  <div className="h-3 w-3/4 rounded skeleton mb-2" />
+                                  <div className="h-3 w-2/3 rounded skeleton" />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <EnhancedLogViewer logs={tabLogs[activeTabId] || []} />
                           {/* Loading more indicator */}
                           {isLoadingMore && (
-                            <div className="py-2 text-center text-xs text-gray-400">
-                              Loading more...
-                            </div>
+                            <div className="py-2 text-center text-xs text-gray-400">Loading more...</div>
                           )}
                         </div>
                       )}
@@ -785,21 +992,40 @@ export const Home = () => {
                   </div>
                 </div>
 
-                {/* Chatbot Section */}
-                <div className="xl:col-span-7 2xl:col-span-7 flex flex-col min-h-0">
-                  <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800/50 rounded-xl shadow-lg flex-1 flex flex-col min-h-0 xl:sticky xl:top-24 overflow-hidden">
-                    <div className="h-full flex flex-col min-h-0">
-                      <Chatbot
-                        key="chatbot-main" // Use same key to maintain component identity
-                        selectedServices={
-                          selectedService ? [selectedService.id] : []
-                        }
-                        projectId={selectedProject}
-                        onOpenInsight={handleOpenInsightFromChat}
-                        isExpanded={isChatbotExpanded}
-                        onToggleExpand={handleChatbotToggle}
-                      />
+                {/* Splitter Handle (xl and up) */}
+                <div className="hidden xl:block select-none">
+                  <div
+                    className={`h-full w-2 rounded bg-slate-700/60 hover:bg-slate-500/70 cursor-col-resize transition-colors ${isDraggingSplit ? 'bg-slate-500/80' : ''}`}
+                    onMouseDown={onMouseDownSplit}
+                    title="Drag to resize"
+                  >
+                    <div className="relative h-full">
+                      <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-1 h-14 bg-slate-400/60 rounded"></div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Chatbot Section */}
+                <div className="flex flex-col min-w-0">
+                  <div className="glass-card gradient-border hover-card flex h-[70vh] min-h-0 flex-col animate-slide-up min-w-0 overflow-hidden">
+                    <ChatbotPanel
+                      messages={chatMessages}
+                      isStreaming={isChatStreaming}
+                    error={chatError}
+                    suggestions={chatSuggestions}
+                    inputValue={chatDraft}
+                    onInputChange={setChatDraft}
+                    onSend={handleChatSend}
+                    onSuggestionSelect={handleChatSuggestionSelect}
+                    onReset={handleChatReset}
+                    onToggleExpand={handleChatbotToggle}
+                    isExpanded={false}
+                      plan={chatPlan}
+                      contextSummary={chatContextSummary}
+                      queryAnalysis={chatQueryAnalysis}
+                      queryHistory={chatQueryHistory}
+                      onLogReferenceSelect={handleLogReferenceSelect}
+                    />
                   </div>
                 </div>
               </div>
