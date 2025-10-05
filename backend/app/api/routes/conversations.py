@@ -129,7 +129,15 @@ def _message_to_chat_message(
 
     timestamp = _timestamp_to_datetime(message.created_at) or datetime.now(timezone.utc)
     content = message.get_content_string() if hasattr(message, "get_content_string") else ""
+    raw_content = content
+    if role == "user" and content:
+        delimiter = "## User Query"
+        if delimiter in content:
+            _, after = content.split(delimiter, 1)
+            content = after.lstrip("\n\r ") or content
     metadata = message.model_dump(mode="json", exclude_none=True)
+    if raw_content and metadata is not None:
+        metadata.setdefault("rawContent", raw_content)
 
     message_id = metadata.get("id")
     if not isinstance(message_id, str) or not message_id.strip():
