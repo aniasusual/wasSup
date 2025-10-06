@@ -120,10 +120,10 @@ export const Home = () => {
     return context;
   }, [activeTabId, pendingSearch, projectArchitecture, selectedService]);
 
-  const chatSession = useChatSession({
-    projectId: selectedProject || undefined,
-    baseContext: chatBaseContext,
-  });
+const chatSession = useChatSession({
+  projectId: selectedProject || undefined,
+  baseContext: chatBaseContext,
+});
 
   const {
     sessionId: activeChatSessionId,
@@ -143,6 +143,13 @@ export const Home = () => {
     resetChat,
   } = chatSession;
   const [chatDraft, setChatDraft] = useState("");
+
+  const createUniqueTabId = useCallback((prefix: string) => {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      return `${prefix}-${crypto.randomUUID()}`;
+    }
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }, []);
 
   const handleSessionSelect = useCallback(
     async (targetSessionId: string) => {
@@ -254,14 +261,14 @@ export const Home = () => {
 
   // Create a new tab when service is selected (allow multiple tabs for same service)
   const handleServiceSelect = (service: GCPService) => {
-    const tabId = `${service.id}-${Date.now()}`;
+    const tabId = createUniqueTabId(`service-${service.id}`);
     // Use the user-friendly service name for the tab title
     const tabTitle = service.name;
     const newTab: LogTab = {
       id: tabId,
       title: tabTitle,
       serviceId: service.id,
-      isActive: false,
+      isActive: true,
       filters: {
         severity: [],
         resourceType: service.id, // Ensure resourceType is set to the service id
@@ -462,7 +469,7 @@ export const Home = () => {
       const existingTab = tabs.find(
         (tab) => tab.query === filterString && tab.serviceId === resourceType
       );
-      const tabId = existingTab?.id ?? `logref-${reference.id ?? Date.now()}`;
+      const tabId = existingTab?.id ?? createUniqueTabId("logref");
       const titleParts = [reference.service_name, reference.severity]
         .filter((part): part is string => Boolean(part && part.trim()))
         .map((part) => part.trim());
@@ -491,7 +498,7 @@ export const Home = () => {
         id: tabId,
         title,
         serviceId: resourceType,
-        isActive: false,
+        isActive: true,
         filters,
         query: filterString,
         lastUpdated: new Date(),
@@ -513,7 +520,7 @@ export const Home = () => {
 
       void fetchLogsForTab(tabData);
     },
-    [selectedProvider, selectedProject, fetchLogsForTab, tabs]
+    [selectedProvider, selectedProject, fetchLogsForTab, tabs, createUniqueTabId]
   );
 
   // Load more logs using nextPageToken for the active tab
