@@ -120,12 +120,15 @@ export const Home = () => {
     return context;
   }, [activeTabId, pendingSearch, projectArchitecture, selectedService]);
 
-  const chatSession = useChatSession({
-    projectId: selectedProject || undefined,
-    baseContext: chatBaseContext,
-  });
+const chatSession = useChatSession({
+  projectId: selectedProject || undefined,
+  baseContext: chatBaseContext,
+});
 
   const {
+    sessionId: activeChatSessionId,
+    sessions: chatSessions,
+    isLoadingSessions: isChatSessionsLoading,
     messages: chatMessages,
     isStreaming: isChatStreaming,
     error: chatError,
@@ -134,11 +137,33 @@ export const Home = () => {
     contextSummary: chatContextSummary,
     queryAnalysis: chatQueryAnalysis,
     queryHistory: chatQueryHistory,
+    loadSession,
     sendMessage: sendChatMessage,
     runSuggestion: runChatSuggestion,
     resetChat,
   } = chatSession;
   const [chatDraft, setChatDraft] = useState("");
+
+  const createUniqueTabId = useCallback((prefix: string) => {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      return `${prefix}-${crypto.randomUUID()}`;
+    }
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }, []);
+
+  const handleSessionSelect = useCallback(
+    async (targetSessionId: string) => {
+      try {
+        await loadSession(targetSessionId);
+        setChatDraft("");
+      } catch (err) {
+        const detail =
+          err instanceof Error ? err.message : "Failed to load the selected session.";
+        toast.error(detail);
+      }
+    },
+    [loadSession]
+  );
 
   // Resizable splitter state for logs/chat widths (xl+ screens)
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -236,14 +261,14 @@ export const Home = () => {
 
   // Create a new tab when service is selected (allow multiple tabs for same service)
   const handleServiceSelect = (service: GCPService) => {
-    const tabId = `${service.id}-${Date.now()}`;
+    const tabId = createUniqueTabId(`service-${service.id}`);
     // Use the user-friendly service name for the tab title
     const tabTitle = service.name;
     const newTab: LogTab = {
       id: tabId,
       title: tabTitle,
       serviceId: service.id,
-      isActive: false,
+      isActive: true,
       filters: {
         severity: [],
         resourceType: service.id, // Ensure resourceType is set to the service id
@@ -266,63 +291,6 @@ export const Home = () => {
     // Initial fetch for the newly created tab
     void fetchLogsForTab(newTab);
   };
-
-  // Create an insight tab when clicking a relevant log from chat
-  const handleOpenInsightFromChat = ({ sourceMessageId, log }: any) => {
-    const tabId = `insight-${log.id}-${Date.now()}`;
-
-    // Create a more descriptive title based on log content
-    let title = `🔍 AI Insight`;
-    if (log.severity === "ERROR") {
-      title = `🚨 Error Analysis`;
-    } else if (log.severity === "WARNING") {
-      title = `⚠️ Warning Investigation`;
-    } else if (log.serviceId) {
-      title = `🔍 ${log.serviceId} Analysis`;
-    }
-
-    // Build a custom query to find related logs
-    const customQuery = log.traceId
-      ? `traceId="${log.traceId}"`
-      : log.insertId
-      ? `insertId="${log.insertId}"`
-      : `resource.type="${log.serviceId}" AND severity="${log.severity}"`;
-
-    const newTab: LogTab = {
-      id: tabId,
-      title,
-      serviceId: log.serviceId || "unknown",
-      isActive: false,
-      filters: {
-        severity: log.severity ? [log.severity] : [],
-        resourceType: log.serviceId || "",
-        logType: [],
-        sourceLocation: "",
-        userAccount: "",
-        requestId: log.traceId || "",
-        timeRange: "custom",
-        customQuery,
-        customStartTime: "",
-        customEndTime: "",
-      },
-      query: customQuery,
-      lastUpdated: new Date(),
-      type: "insight",
-      sourceMessageId,
-      primaryLogId: log.insertId || log.id,
-    };
-
-    setTabs((prev) => [
-      ...prev.map((t) => ({ ...t, isActive: false })),
-      newTab,
-    ]);
-    setActiveTabId(tabId);
-    setSelectedService(undefined);
-
-    // Fetch logs for the insight tab
-    void fetchLogsForTab(newTab);
-  };
-
 
   // Update active tab when changed
   useEffect(() => {
@@ -501,7 +469,7 @@ export const Home = () => {
       const existingTab = tabs.find(
         (tab) => tab.query === filterString && tab.serviceId === resourceType
       );
-      const tabId = existingTab?.id ?? `logref-${reference.id ?? Date.now()}`;
+      const tabId = existingTab?.id ?? createUniqueTabId("logref");
       const titleParts = [reference.service_name, reference.severity]
         .filter((part): part is string => Boolean(part && part.trim()))
         .map((part) => part.trim());
@@ -530,7 +498,7 @@ export const Home = () => {
         id: tabId,
         title,
         serviceId: resourceType,
-        isActive: false,
+        isActive: true,
         filters,
         query: filterString,
         lastUpdated: new Date(),
@@ -552,7 +520,7 @@ export const Home = () => {
 
       void fetchLogsForTab(tabData);
     },
-    [selectedProvider, selectedProject, fetchLogsForTab, tabs]
+    [selectedProvider, selectedProject, fetchLogsForTab, tabs, createUniqueTabId]
   );
 
   // Load more logs using nextPageToken for the active tab
@@ -696,7 +664,11 @@ export const Home = () => {
             <div className="flex items-center justify-between sm:justify-start">
               <div className="flex items-center space-x-2 sm:space-x-4">
                 <Link to="/" className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                  <img src="/logo.png" alt="Recce" className="w-40 h-40" />
+                  <img
+                    src="/logo.png"
+                    alt="Recce"
+                    className="h-20 sm:h-18 md:h-24 lg:h-30 xl:h-40 w-auto object-contain"
+                  />
                 </Link>
                 <div className="hidden sm:block h-6 w-px bg-gray-700"></div>
                 <div className="hidden sm:block">
@@ -894,6 +866,10 @@ export const Home = () => {
                     contextSummary={chatContextSummary}
                     queryAnalysis={chatQueryAnalysis}
                     queryHistory={chatQueryHistory}
+                    sessions={chatSessions}
+                    activeSessionId={activeChatSessionId}
+                    isLoadingSessions={isChatSessionsLoading}
+                    onSessionSelect={handleSessionSelect}
                     onLogReferenceSelect={handleLogReferenceSelect}
                   />
                 </div>
@@ -1011,19 +987,23 @@ export const Home = () => {
                     <ChatbotPanel
                       messages={chatMessages}
                       isStreaming={isChatStreaming}
-                    error={chatError}
-                    suggestions={chatSuggestions}
-                    inputValue={chatDraft}
-                    onInputChange={setChatDraft}
-                    onSend={handleChatSend}
-                    onSuggestionSelect={handleChatSuggestionSelect}
-                    onReset={handleChatReset}
-                    onToggleExpand={handleChatbotToggle}
-                    isExpanded={false}
+                      error={chatError}
+                      suggestions={chatSuggestions}
+                      inputValue={chatDraft}
+                      onInputChange={setChatDraft}
+                      onSend={handleChatSend}
+                      onSuggestionSelect={handleChatSuggestionSelect}
+                      onReset={handleChatReset}
+                      onToggleExpand={handleChatbotToggle}
+                      isExpanded={false}
                       plan={chatPlan}
                       contextSummary={chatContextSummary}
                       queryAnalysis={chatQueryAnalysis}
                       queryHistory={chatQueryHistory}
+                      sessions={chatSessions}
+                      activeSessionId={activeChatSessionId}
+                      isLoadingSessions={isChatSessionsLoading}
+                      onSessionSelect={handleSessionSelect}
                       onLogReferenceSelect={handleLogReferenceSelect}
                     />
                   </div>
