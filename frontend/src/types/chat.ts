@@ -11,6 +11,18 @@ export interface ChatMessage {
   metadata?: Record<string, unknown>;
 }
 
+export interface ChatSessionSummary {
+  sessionId: string;
+  title: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastMessagePreview?: string;
+}
+
+export interface ChatSessionDetail extends ChatSessionSummary {
+  messages: ChatMessage[];
+}
+
 export interface ChatSuggestion {
   id: string;
   label: string;
@@ -58,11 +70,11 @@ export interface InvestigationPlan {
 export interface ChatTurnResponse {
   sessionId: string;
   reply: ChatMessage;
-  plan: InvestigationPlan;
-  followUpQuestions: string[];
-  contextSummary: string;
+  plan?: InvestigationPlan | null;
+  followUpQuestions?: string[];
+  contextSummary?: string;
   queryAnalysis?: QueryUnderstandingResult | null;
-  queryHistory: QueryHistoryEntry[];
+  queryHistory?: QueryHistoryEntry[];
 }
 
 export interface QueryIntent {
