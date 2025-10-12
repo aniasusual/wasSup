@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -6,12 +7,26 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 from app.api.main import api_router
+from .api.agents.mainAgent import get_main_agent
 from .core.config import settings
+from agno.os import AgentOS
+
 
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from .core.database import connect_to_mongo, close_mongo_connection
+    await connect_to_mongo()
+    try:
+        yield
+    finally:
+        await close_mongo_connection()
+
+
+app = FastAPI(lifespan=lifespan)
+
 
 # CORS middleware
 app.add_middleware(
@@ -23,6 +38,7 @@ app.add_middleware(
 )
 
 
+
 # In-memory storage (use Redis or database in production)
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
@@ -32,19 +48,16 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Startup tasks when the application starts."""
-    from .core.database import connect_to_mongo
-    await connect_to_mongo()
+agent_os = AgentOS(
+    agents=[get_main_agent(project_id="default", access_token="default")],
+    description="Recce main-agent",
+    base_app=app  
+)
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Shutdown tasks when the application stops."""
-    from .core.database import close_mongo_connection
-    await close_mongo_connection()
+app = agent_os.get_app()
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # uvicorn.run(app, host="0.0.0.0", port=8000)
+    agent_os.serve(app="custom_fastapi_app:app", reload=True)
