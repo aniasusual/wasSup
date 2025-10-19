@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class InvestigationStep(BaseModel):
@@ -57,26 +58,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
 
 
-class LogReferenceMetadata(BaseModel):
-    """Metadata about a log reference."""
-    service: Optional[str] = None
-    severity: Optional[str] = None
-    count: Optional[int] = None
-    time_range: Optional[str] = None
-
-
-class LogReference(BaseModel):
-    """
-    A reference to a set of logs that can be fetched on-demand.
-    The frontend will create a button for each log reference.
-    """
-    id: str = Field(..., description="Unique identifier for this log reference")
-    description: str = Field(..., description="Human-readable description for the button label")
-    filter: str = Field(..., description="Cloud Logging API filter string")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata (service, severity, count, etc.)")
-    preview: List[str] = Field(default_factory=list, description="Preview of 1-3 log entries")
-
-
 class ChatTurnRequest(BaseModel):
     """Request payload for a chat turn."""
     session_id: Optional[str] = None
@@ -88,25 +69,54 @@ class ChatTurnRequest(BaseModel):
     )
 
 
-class ChatTurnResponse(BaseModel):
-    """Response from the agent after analyzing logs."""
-    session_id: str
-    reply: str = Field(..., description="The agent's analysis and findings (cleaned text without log dumps)")
-    log_references: List[LogReference] = Field(
-        default_factory=list,
-        description="Structured references to relevant logs for on-demand viewing"
-    )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional metadata about the response (model, timestamp, etc.)"
-    )
+
+class ChatMessageResponse(BaseModel):
+    """Serialized chat message returned to the frontend."""
+
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: datetime
+    status: str = "sent"
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class LogFetchRequest(BaseModel):
-    """Request to fetch logs using a filter."""
-    project_id: str
-    filter_str: str
-    order_by: str = "timestamp desc"
-    page_size: int = Field(default=100, le=1000)
-    page_token: Optional[str] = None
+class ChatTurnResponseModel(BaseModel):
+    """Response shape for a single chat turn."""
+
+    session_id: str = Field(alias="sessionId")
+    reply: ChatMessageResponse
+    plan: Optional[Dict[str, Any]] = None
+    follow_up_questions: List[str] = Field(default_factory=list, alias="followUpQuestions")
+    context_summary: str = Field(default="", alias="contextSummary")
+    query_analysis: Optional[Dict[str, Any]] = Field(default=None, alias="queryAnalysis")
+    query_history: List[Dict[str, Any]] = Field(default_factory=list, alias="queryHistory")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ChatSessionSummaryResponse(BaseModel):
+    """Lightweight session details for listing sessions."""
+
+    session_id: str = Field(alias="sessionId")
+    title: str
+    created_at: Optional[datetime] = Field(default=None, alias="createdAt")
+    updated_at: Optional[datetime] = Field(default=None, alias="updatedAt")
+    last_message_preview: Optional[str] = Field(default=None, alias="lastMessagePreview")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ChatSessionDetailResponse(BaseModel):
+    """Full session payload with message history."""
+
+    session_id: str = Field(alias="sessionId")
+    title: str
+    created_at: Optional[datetime] = Field(default=None, alias="createdAt")
+    updated_at: Optional[datetime] = Field(default=None, alias="updatedAt")
+    messages: List[ChatMessageResponse] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
 
