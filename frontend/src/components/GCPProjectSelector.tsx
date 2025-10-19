@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { ChevronDown, Search, Edit3, List, Building2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, Search, Edit3, List, Building2, Clock } from "lucide-react";
 
 interface GCPProject {
   project_id: string;
   name: string;
 }
+
+const HISTORY_STORAGE_KEY = "recce:gcpProjectHistory";
+const HISTORY_LIMIT = 8;
 
 interface GCPProjectSelectorProps {
   selectedProject: string;
@@ -24,6 +27,68 @@ export const GCPProjectSelector = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [manualProjectId, setManualProjectId] = useState("");
   const [isSettingProject, setIsSettingProject] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!stored) {
+        return;
+      }
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        const sanitized = parsed
+          .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          .slice(0, HISTORY_LIMIT);
+        if (sanitized.length > 0) {
+          setHistory(sanitized);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load project history", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      if (history.length === 0) {
+        window.localStorage.removeItem(HISTORY_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+      }
+    } catch (error) {
+      console.error("Failed to persist project history", error);
+    }
+  }, [history]);
+
+  const addToHistory = (projectId: string) => {
+    const trimmed = projectId.trim();
+    if (!trimmed) {
+      return;
+    }
+    setHistory((prev) => {
+      const deduped = [trimmed, ...prev.filter((item) => item !== trimmed)];
+      return deduped.slice(0, HISTORY_LIMIT);
+    });
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+  };
+
+  const historyMatches = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return history;
+    }
+    const query = searchQuery.toLowerCase();
+    return history.filter((projectId) => projectId.toLowerCase().includes(query));
+  }, [history, searchQuery]);
 
   // Combine fetched projects with manually added ones
   const allProjects = [...projects];
@@ -45,6 +110,7 @@ export const GCPProjectSelector = ({
 
   const handleProjectSelect = (projectId: string) => {
     onProjectSelect(projectId);
+    addToHistory(projectId);
     setIsOpen(false);
     setSearchQuery("");
   };
@@ -53,6 +119,7 @@ export const GCPProjectSelector = ({
     if (manualProjectId.trim()) {
       setIsSettingProject(true);
       onProjectSelect(manualProjectId.trim());
+      addToHistory(manualProjectId.trim());
 
       setTimeout(() => {
         setIsSettingProject(false);
@@ -193,6 +260,57 @@ export const GCPProjectSelector = ({
 
           {/* Project List */}
           <div className="max-h-[28rem] overflow-y-auto custom-scrollbar">
+            {historyMatches.length > 0 && (
+              <div className="px-3 pt-3 pb-2 border-b border-gray-800/60">
+                <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-gray-500 mb-2">
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    Recent Projects
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearHistory();
+                      setSearchQuery("");
+                    }}
+                    className="text-[11px] font-semibold text-gray-400 hover:text-red-300 transition-colors"
+                  >
+                    Clear History
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {historyMatches.map((projectId) => {
+                    const matchedProject = allProjects.find(
+                      (project) => project.project_id === projectId
+                    );
+                    const displayName = matchedProject?.name ?? projectId;
+
+                    return (
+                      <button
+                        key={`history-${projectId}`}
+                        onClick={() => handleProjectSelect(projectId)}
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-white transition-colors hover:bg-gray-800/60"
+                      >
+                        <span className="text-xl">
+                          <Building2 className="w-5 h-5 text-gray-300" />
+                        </span>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm">{displayName}</div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">
+                            {projectId}
+                          </div>
+                        </div>
+                        {projectId === selectedProject && (
+                          <span className="text-xs bg-blue-600/80 text-white px-2 py-1 rounded-lg font-medium">
+                            Selected
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="p-2">
               {filteredProjects.map((project) => (
                 <button
